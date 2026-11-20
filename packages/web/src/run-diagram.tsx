@@ -3,9 +3,9 @@
  * coloured by its live status. Rendered from the run's definition and its node runs, so it
  * follows the run as the page refetches on each event.
  */
-import { Background, Handle, MarkerType, Position, ReactFlow, ReactFlowProvider, type Edge, type Node, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
+import { Background, Handle, MarkerType, Position, ReactFlow, ReactFlowProvider, type Edge, type Node, type NodeChange, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useAppTheme } from "./theme";
 import { autoLayout } from "./designer/model";
 
@@ -76,6 +76,16 @@ export function stepStatus(nodeRuns: any[], nodeId: string): { status: StepStatu
 const EDGE_COLOR: Record<string, string> = { done: "#16a34a", active: "#2563eb", idle: "#94a3b8" };
 
 export function RunDiagram({ definition, nodeRuns, onOpen }: { definition: any; nodeRuns: any[]; onOpen: (nodeId: string) => void }) {
+  // React Flow draws a node `visibility: hidden` until it has measured it, and it keeps a measurement
+  // only while it sees the same node object: a new object for an id it knows starts unmeasured again.
+  // These nodes are rebuilt from the run's record on every update (the page polls and follows the
+  // run's events), so the sizes React Flow reports are kept here and handed back with each new node.
+  // Without that, every update made the whole diagram invisible until something happened to resize a
+  // node, and on a busy machine nothing ever did: the steps could not be clicked at all (E9.49-2).
+  const measured = useRef(new Map<string, { width: number; height: number }>());
+  const onNodesChange = useCallback((changes: NodeChange<Node<StepData>>[]) => {
+    for (const c of changes) if (c.type === "dimensions" && c.dimensions) measured.current.set(c.id, c.dimensions);
+  }, []);
   const { nodes, edges } = useMemo(() => {
     const defNodes: any[] = definition?.nodes ?? [];
     const defEdges: { from: string; to: string }[] = definition?.edges ?? [];
@@ -86,7 +96,7 @@ export function RunDiagram({ definition, nodeRuns, onOpen }: { definition: any; 
       status[n.id] = st.status;
       const inner = n.type === "map" ? n.node : n;
       const detail = n.type === "gate" ? `${n.kind} gate` : n.type === "map" ? `each item → ${inner?.type ?? "agent"}` : inner?.type === "script" ? inner.run ?? "script" : inner?.model ?? "agent";
-      return { id: n.id, type: "step", position: pos[n.id], data: { nodeId: n.id, type: n.type, status: st.status, attempt: st.attempt, progress: st.progress, detail }, draggable: false, selectable: false, connectable: false };
+      return { id: n.id, type: "step", position: pos[n.id], measured: measured.current.get(n.id), data: { nodeId: n.id, type: n.type, status: st.status, attempt: st.attempt, progress: st.progress, detail }, draggable: false, selectable: false, connectable: false };
     });
     const edges: Edge[] = defEdges.map((e) => {
       const from = status[e.from], to = status[e.to];
@@ -125,6 +135,7 @@ export function RunDiagram({ definition, nodeRuns, onOpen }: { definition: any; 
         <ReactFlowProvider>
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.15, maxZoom: 1, minZoom: 0.1 }} minZoom={0.1}
             colorMode={theme}
+            onNodesChange={onNodesChange}
             onInit={(inst) => { flow.current = inst; }}
             nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} nodesFocusable={false} edgesFocusable={false}
             panOnDrag={false} panOnScroll={false} zoomOnScroll={false} zoomOnPinch={false} zoomOnDoubleClick={false} preventScrolling={false}

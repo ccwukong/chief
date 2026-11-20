@@ -21,6 +21,11 @@ export function Settings() {
   /** There is no Save button: a change is saved a moment after it is made. `invalid` keeps what was typed on screen. */
   const [state, setState] = useState<"saved" | "saving" | "invalid">("saved");
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The form to write next, if a save is already on its way (see `save`). */
+  const latest = useRef<Record<string, any> | null>(null);
+  const saving = useRef(false);
+  /** Counts every change the person makes, so a save can tell whether what it carries is still the newest. */
+  const typed = useRef(0);
   const load = () => get("/api/settings").then((s) => {
     // What was typed but could not be saved yet (an invalid value, or a refresh in mid-typing) comes back.
     const draft = readDraft<Record<string, any>>("settings");
@@ -35,27 +40,46 @@ export function Settings() {
   }).catch((e) => setError(e.message));
   /** Save the whole form. A value that is not valid is not saved; it stays on screen with the reason. */
   const save = async (form: Record<string, any>) => {
-    const budget: Record<string, number> = {};
-    for (const [key, v] of [["warn-usd", form.warn], ["max-usd", form.max]] as const) {
-      if (v === "" || v == null) continue;
-      const n = Number(v);
-      if (!Number.isFinite(n) || n <= 0) { setState("invalid"); return setError(`${key} must be a positive number. Nothing is saved until this is corrected.`); }
-      budget[key] = n;
-    }
-    const limit = Number(form.limit);
-    if (!Number.isInteger(limit) || limit < 100) { setState("invalid"); return setError("The output size limit must be a whole number of at least 100 characters. Nothing is saved until this is corrected."); }
-    setState("saving");
+    // One save at a time, and always the newest form: the person types faster than a request takes, so
+    // a second change arriving mid-flight is queued rather than sent in parallel, where the slower one
+    // (an older form) could land last and put a field back.
+    latest.current = form;
+    if (saving.current) return;
+    saving.current = true;
     try {
-      await api("PUT", "/api/settings", {
-        "default-adapter": form.adapter,
-        "default-budget": budget, "output-size-limit": limit, notify: !!form.notify, "workspace-dir": String(form.workspace).trim() || null,
-      });
-      removeDraft("settings");
-      setError(null);
-      setState("saved");
-      setSavedAt(new Date());
+      while (latest.current) {
+        const next = latest.current;
+        latest.current = null;
+        // What was typed when this save began. Typing that happens while it is in flight is newer than
+        // what this request carries, and its draft must survive it (E6.6-2: the workspace directory was
+        // typed, a save of another field finished, the draft was deleted with it, `load()` filled the
+        // field from the server and the next save wrote the empty value back).
+        const edits = typed.current;
+        const budget: Record<string, number> = {};
+        for (const [key, v] of [["warn-usd", next.warn], ["max-usd", next.max]] as const) {
+          if (v === "" || v == null) continue;
+          const n = Number(v);
+          if (!Number.isFinite(n) || n <= 0) { setState("invalid"); setError(`${key} must be a positive number. Nothing is saved until this is corrected.`); return; }
+          budget[key] = n;
+        }
+        const limit = Number(next.limit);
+        if (!Number.isInteger(limit) || limit < 100) { setState("invalid"); setError("The output size limit must be a whole number of at least 100 characters. Nothing is saved until this is corrected."); return; }
+        setState("saving");
+        try {
+          await api("PUT", "/api/settings", {
+            "default-adapter": next.adapter,
+            "default-budget": budget, "output-size-limit": limit, notify: !!next.notify, "workspace-dir": String(next.workspace).trim() || null,
+          });
+        } catch (e: any) { setState("invalid"); setError(e.message); return; }
+        // The draft goes only when nothing was typed since this request left: what is on screen now is
+        // what the server has. Otherwise the next turn of the loop saves that too.
+        if (typed.current === edits && !latest.current) removeDraft("settings");
+        setError(null);
+        setState("saved");
+        setSavedAt(new Date());
+      }
       loadDoctor();
-    } catch (e: any) { setState("invalid"); setError(e.message); }
+    } finally { saving.current = false; }
   };
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const loadDoctor = () => get("/api/doctor").then(setDoctor).catch(() => {});
@@ -66,6 +90,7 @@ export function Settings() {
     const next = { ...f, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value };
     setF(next);
     writeDraft("settings", next);
+    typed.current += 1;
     clearTimeout(timer.current);
     timer.current = setTimeout(() => void save(next), 400);
   };

@@ -844,19 +844,24 @@ test("E9.11-1 settings that need explaining have a help tooltip with an example"
 
   // Node panel, for each kind of node. The tooltip is fully on screen even at the right edge of the side panel.
   const inViewport = async (id: string) => {
-    const box = (await text(id).boundingBox())!;
+    // Short, because a bubble that has gone is a hover to repeat, not a wait: on a loaded runner the
+    // page above it is still settling (the provider cards and the doctor fill in), which moves the "?"
+    // out from under the pointer and closes the bubble it had opened. `shows` retries with a new hover.
+    const box = await text(id).boundingBox({ timeout: 2000 });
+    expect(box, `the tooltip for ${id} is open`).not.toBeNull();
     const size = page.viewportSize()!;
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(size.width);
   };
   const shows = async (id: string, part: string | RegExp) => {
     // The side panel can still be settling (the save status and the check result appear above the
-    // fields a moment after a drop), which moves the "?" under the pointer; hover again if so.
+    // fields a moment after a drop), which moves the "?" under the pointer; hover again if so. The
+    // position is checked inside the retry too: the tooltip is only there while the pointer is on it.
     await expect(async () => {
       await tid(page, `help-${id}`).hover();
       await expect(text(id)).toContainText(part, { timeout: 1000 });
+      await inViewport(id);
     }).toPass({ timeout: 15_000 });
-    await inViewport(id);
     await page.mouse.move(5, 300);
   };
   await drop(page, "palette-agent", 300, 120);
@@ -2562,8 +2567,14 @@ test("E9.51-1 the designer's side panel has a Workflow tab and a Step tab that f
   await expect(tid(page, "node-prompt")).toBeInViewport();
   await expect(tid(page, "wf-name")).toHaveCount(0);
   await expect(tid(page, "btn-run")).toBeVisible();
-  const tabs = (await tid(page, "panel-tabs").boundingBox())!, id = (await tid(page, "node-id").boundingBox())!;
-  expect(id.y - (tabs.y + tabs.height)).toBeLessThan(120);
+  // Both boxes in one measurement: the validation card above the tabs arrives a moment after the page
+  // (109 px at once), and two separate round trips can land on either side of it, which reads as a gap
+  // of 205 px that neither layout has (CI found exactly that). One `evaluate` is one layout.
+  const gap = await page.evaluate(() => {
+    const box = (testid: string) => document.querySelector(`[data-testid="${testid}"]`)!.getBoundingClientRect();
+    return box("node-id").top - box("panel-tabs").bottom;
+  });
+  expect(gap).toBeLessThan(120);
 
   // The Workflow tab is one click away and keeps the step selected; going back shows the step again.
   await tid(page, "tab-workflow").click();
