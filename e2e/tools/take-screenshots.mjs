@@ -159,10 +159,18 @@ try {
 
   // One picture in the dark theme, since the theme is a feature and a screenshot is how it is seen.
   // The run open in its panel over the list is the densest page, so it shows the theme best.
+  //
+  // The theme is read before the first render (`main.tsx`), so the page must be *reloaded* after the
+  // setting changes: `page.goto` to another hash is a same-document navigation, and the picture then
+  // came out light with a caption saying dark (found 2026-11-20, E15.19-1 now checks the pixels).
   await api("PUT", "/api/settings", { theme: "dark" });
   await page.setViewportSize({ width: 1360, height: 860 });
   await page.goto(`${url}/#/runs/${first}`);
+  await page.reload();
   await page.locator('[data-testid="run-status"]').waitFor();
+  // The signal that the theme is painted, rather than a wait: the script cannot save a light picture
+  // labelled dark.
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   await page.waitForTimeout(800);
   await shot("run-dark.png");
   await api("PUT", "/api/settings", { theme: "light" });

@@ -1,8 +1,60 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { inflateSync } from "node:zlib";
 import { parse } from "yaml";
 import { expect, ROOT_DIR, test } from "../helpers";
+
+/**
+ * The mean luminance of a PNG and the share of its pixels that are dark, with no dependency.
+ *
+ * A screenshot is an 8-bit truecolour PNG written by Chromium, so a small unfilter is enough. The case
+ * that shows the pictures needs this because a caption is not evidence: the dark-theme screenshot was
+ * the light theme for months of passing cases that never looked at a pixel (found 2026-11-20).
+ */
+function pngLuminance(file: string): { width: number; height: number; mean: number; darkShare: number } {
+  const png = readFileSync(file);
+  let at = 8, width = 0, height = 0, depth = 0, color = 0, interlace = 0;
+  const idat: Buffer[] = [];
+  while (at < png.length) {
+    const len = png.readUInt32BE(at);
+    const type = png.toString("ascii", at + 4, at + 8);
+    const data = png.subarray(at + 8, at + 8 + len);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0); height = data.readUInt32BE(4);
+      depth = data[8]; color = data[9]; interlace = data[12];
+    } else if (type === "IDAT") idat.push(data);
+    else if (type === "IEND") break;
+    at += 12 + len;
+  }
+  expect({ depth, interlace }, "an 8-bit, non-interlaced PNG").toEqual({ depth: 8, interlace: 0 });
+  const channels = color === 6 ? 4 : color === 2 ? 3 : color === 4 ? 2 : 1;
+  if (![0, 2, 4, 6].includes(color)) throw new Error(`unsupported PNG colour type ${color}`);
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * channels;
+  const px = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? px[y * stride + x - channels] : 0;
+      const b = y > 0 ? px[(y - 1) * stride + x] : 0;
+      const c = x >= channels && y > 0 ? px[(y - 1) * stride + x - channels] : 0;
+      const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+      const guessed = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      const predicted = filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a + b) >> 1 : filter === 4 ? guessed : 0;
+      px[y * stride + x] = (line[x] + predicted) & 0xff;
+    }
+  }
+  let sum = 0, dark = 0;
+  for (let i = 0; i < width * height; i++) {
+    const o = i * channels;
+    const grey = channels <= 2 ? px[o] : 0.2126 * px[o] + 0.7152 * px[o + 1] + 0.0722 * px[o + 2];
+    sum += grey;
+    if (grey < 60) dark++;
+  }
+  return { width, height, mean: sum / (width * height), darkShare: dark / (width * height) };
+}
 
 /**
  * Phase 15, tasks 15.16 and 15.26: the macOS app is built by CI from the commit that raises the version,
@@ -120,7 +172,7 @@ test("E15.18-1 the build generates the notices and ships them, and the tree has 
  * case checks the other half, that every picture the README shows exists and every picture in the folder
  * is shown, so a page that gains or loses a screenshot is noticed.
  */
-test("E15.19-1 every screenshot the README shows exists, and every screenshot in the folder is shown", () => {
+test("E15.19-1 every screenshot the README shows exists and is shown, and the dark-theme one is dark", () => {
   const readme = readFileSync(join(ROOT_DIR, "README.md"), "utf8");
   // Each picture is a link around an image, so it appears twice in the markdown; the set is what matters.
   const shown = [...new Set([...readme.matchAll(/\]\(docs\/screenshots\/([a-z-]+\.png)\)/g)].map((m) => m[1]))];
@@ -135,6 +187,22 @@ test("E15.19-1 every screenshot the README shows exists, and every screenshot in
   // And nothing in the folder is left behind, unshown.
   const files = readdirSync(join(ROOT_DIR, "docs/screenshots")).filter((f) => f.endsWith(".png"));
   expect(files.filter((f) => !shown.includes(f)), "screenshots the README does not show").toEqual([]);
+
+  // The dark-theme picture is *dark*. The tool used to set the setting and then change only the hash,
+  // which is a same-document navigation, so the app never re-read it: the file was the light theme
+  // under a caption saying "The dark theme", and every case passed because none looked at a pixel
+  // (found 2026-11-20). The light run list measures about 247; a dark page cannot.
+  expect(readme).toContain("in the dark theme");
+  const site = readFileSync(join(ROOT_DIR, "site/index.html"), "utf8");
+  expect(site).toContain("assets/screenshots/run-dark.png");
+  expect(site).toContain("The dark theme");
+  const dark = pngLuminance(join(ROOT_DIR, "docs/screenshots/run-dark.png"));
+  expect({ width: dark.width, height: dark.height }, "the same 1360×860 frame as the others, at 2x").toEqual({ width: 2720, height: 1720 });
+  expect(dark.mean, "the dark screenshot's mean luminance").toBeLessThan(110);
+  expect(dark.darkShare, "most of the dark screenshot is dark").toBeGreaterThan(0.5);
+  // The light picture beside it is the opposite, so the pair shows the theme instead of one page twice.
+  const light = pngLuminance(join(ROOT_DIR, "docs/screenshots/runs.png"));
+  expect(light.mean, "the run list is the light theme").toBeGreaterThan(200);
 });
 
 /**

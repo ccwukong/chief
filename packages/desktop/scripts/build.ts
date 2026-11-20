@@ -106,17 +106,18 @@ function makeDmg(): void {
   // Still attached? `hdiutil info` lists every attached image and its mount point.
   const stillAttached = (where: string): boolean =>
     (spawnSync("hdiutil", ["info"], { encoding: "utf8", timeout: 60_000 }).stdout ?? "").includes(where);
-  // Detach, and do not return until the image is really gone. A volume that is still attached a moment
-  // later makes the conversion below fail with "Resource temporarily unavailable" — which is what CI
-  // showed once the installer work began writing to the image through Finder, so the detach is verified
-  // rather than assumed.
-  const detach = (where: string): void => {
+  // Detach, and do not return until the image is really gone: `hdiutil info` must list neither the mount
+  // point nor the image file itself. A volume that is still being released makes the conversion below fail
+  // with "Resource temporarily unavailable" — which is what CI did for 0.2.1 even after the mount point had
+  // disappeared from `hdiutil info`, so both are checked rather than just the mount.
+  const detach = (where: string, image: string): void => {
+    const gone = () => !stillAttached(where) && !stillAttached(image);
     let last = spawnSync("hdiutil", ["detach", where, "-quiet"], { encoding: "utf8", timeout: 120_000 });
-    for (let i = 0; i < 40 && stillAttached(where); i++) {
+    for (let i = 0; i < 40 && !gone(); i++) {
       if (i % 8 === 0) last = spawnSync("hdiutil", ["detach", where, "-quiet", "-force"], { encoding: "utf8", timeout: 120_000 });
       pause(250);
     }
-    if (stillAttached(where)) fail("hdiutil detach", last);
+    if (!gone()) fail("hdiutil detach", last);
   };
   try {
     const hdi = spawnSync("hdiutil", ["create", "-volname", VOLUME, "-srcfolder", layout, "-ov", "-format", "UDRW", "-fs", "HFS+", rw], { encoding: "utf8", timeout: 600_000 });
@@ -163,15 +164,23 @@ function makeDmg(): void {
       spawnSync("sync", [], { timeout: 30_000 });
     } finally {
       if (attached) {
-        detach(mount);
+        detach(mount, rw);
         attached = false;
       }
     }
-    const conv = spawnSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { encoding: "utf8", timeout: 600_000 });
+    // `hdiutil convert` answers "Resource temporarily unavailable" while the image it is reading is still
+    // being released — a moment, not a condition, and the one that failed the 0.2.1 build on CI. Only that
+    // answer is retried; anything else (a bad path, no space) is a real error and is reported at once.
+    const transient = /Resource\s+(temporarily\s+unavailable|busy)/i;
+    let conv = spawnSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { encoding: "utf8", timeout: 600_000 });
+    for (let i = 0; i < 15 && conv.status !== 0 && transient.test(`${conv.stderr ?? ""}${conv.stdout ?? ""}`); i++) {
+      pause(1_000);
+      conv = spawnSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { encoding: "utf8", timeout: 600_000 });
+    }
     if (conv.status !== 0) fail("hdiutil convert", conv);
   } finally {
     // Best effort: this runs after a failure too, and must not hide the error that got here.
-    if (attached && stillAttached(mount)) spawnSync("hdiutil", ["detach", mount, "-quiet", "-force"], { encoding: "utf8", timeout: 120_000 });
+    if (attached && (stillAttached(mount) || stillAttached(rw))) spawnSync("hdiutil", ["detach", mount, "-quiet", "-force"], { encoding: "utf8", timeout: 120_000 });
     rmSync(scratch, { recursive: true, force: true });
   }
 }

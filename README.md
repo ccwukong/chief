@@ -217,13 +217,13 @@ ship in [examples/](examples/); they differ only in where they start (Slack, Git
   while chief is running (see the desktop app above; with the CLI it is `chief serve`).
 - **Replay.** Every message of a run, in order, for finding out what happened.
 - **Settings.** The agent CLIs (each with a switch, and its path found for you), the default agent
-  CLI, budgets, where workflow folders go, and **Appearance**: the theme (Light, Dark, System) and
+  CLI, where workflow folders go, and **Appearance**: the theme (Light, Dark, System) and
   the text size (Small to Extra large). Everything saves itself — there is no Save button anywhere
   in the app.
 - **Notifications.** The bell in the top right corner shows how many gates are waiting for you and
   lists them; each one opens its run.
 
-![The run list: start a run, see every run with its status and cost, delete finished ones](docs/screenshots/runs.png)
+![The run list: start a run, see every run with its status, delete finished ones](docs/screenshots/runs.png)
 
 A run open in the panel over the list, in the dark theme:
 

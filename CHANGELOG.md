@@ -26,6 +26,14 @@ Nothing yet.
   come from the newest release, and the page is now published when the desktop build finishes rather than
   waiting for someone to run it or for the next day's schedule.
 
+### Fixed
+
+- **The `.dmg` build no longer fails on a busy image.** `hdiutil convert` could answer *Resource
+  temporarily unavailable* right after the volume was detached, and only on a machine where Finder had
+  written the window layout; a release built from such a machine failed with nothing to act on. The
+  detach now waits until the image itself is released, not just its mount point, and that one transient
+  answer is retried.
+
 ## [0.2.0] — 2026-11-20
 
 ### Added
