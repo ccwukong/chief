@@ -167,6 +167,9 @@ try {
   await page.setViewportSize({ width: 1360, height: 860 });
   await page.goto(`${url}/#/runs/${first}`);
   await page.reload();
+  // The caption says the run is open in the panel over the list, so the picture must be that screen
+  // (not the standalone `#/runs/<id>/full` page, which has no list behind it).
+  await page.locator('[data-testid="run-panel-body"]').waitFor();
   await page.locator('[data-testid="run-status"]').waitFor();
   // The signal that the theme is painted, rather than a wait: the script cannot save a light picture
   // labelled dark.

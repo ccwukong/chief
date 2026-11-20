@@ -343,7 +343,7 @@ code of scripts, gate questions and your answers, status changes and errors.
 - The terminal of `chief serve` shows steps failing as they fail, with the error.
 
 The record contains whatever the agents read (for example Slack messages). It stays in
-`.chief/state/chief.db` on your machine.
+`~/.chief/state/chief.db` on your machine.
 
 ## Safety model
 

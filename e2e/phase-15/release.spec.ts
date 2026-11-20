@@ -200,6 +200,8 @@ test("E15.19-1 every screenshot the README shows exists and is shown, and the da
   expect({ width: dark.width, height: dark.height }, "the same 1360×860 frame as the others, at 2x").toEqual({ width: 2720, height: 1720 });
   expect(dark.mean, "the dark screenshot's mean luminance").toBeLessThan(110);
   expect(dark.darkShare, "most of the dark screenshot is dark").toBeGreaterThan(0.5);
+  // And it is the screen the caption names: a run in the panel over the list, not the full-page run.
+  expect(readFileSync(join(ROOT_DIR, "e2e/tools/take-screenshots.mjs"), "utf8")).toContain('[data-testid="run-panel-body"]');
   // The light picture beside it is the opposite, so the pair shows the theme instead of one page twice.
   const light = pngLuminance(join(ROOT_DIR, "docs/screenshots/runs.png"));
   expect(light.mean, "the run list is the light theme").toBeGreaterThan(200);
@@ -287,6 +289,14 @@ test("E15.26-1 a push to main builds the app only when the manifest's version is
 
   // The build is skipped when the version is not higher, and it never runs before the decision.
   expect((wf.jobs as any).dmg.if).toContain("needs.version.outputs.build == 'true'");
+  // ...and it opts out of the status check, because a version whose tag already exists skips the `tag` job,
+  // and a skipped job in the chain suppresses everything after it. Both the build and the publish must
+  // still run in that case: it is how a failed build is retried (task 15.26).
+  expect((wf.jobs as any).dmg.if).toContain("always()");
+  const rel = (wf.jobs as any).release;
+  expect(rel.if, "the publish runs after a rebuild of an existing tag").toContain("always()");
+  // And it depends on the artifact, not on the version alone: `dmg.result` is what says the build made one.
+  expect(rel.if).toContain("needs.dmg.result == 'success'");
   expect((wf.jobs as any).dmg.needs).toContain("version");
   // The tag is created by a job of its own that holds `contents: write`, and only that job and the
   // publishing one do.

@@ -244,7 +244,12 @@ jobs:
   # cannot link to one; a release asset can be fetched by anyone with the URL.
   release:
     needs: [version, dmg]
-    if: needs.version.outputs.build == 'true'
+    # `always()` for the same reason the `dmg` job has it: a version whose tag already exists skips the `tag`
+    # job, and a skipped job anywhere in the chain suppresses the jobs after it unless the condition opts out
+    # of that status check. Without it this job was silently skipped on the 0.2.1 rebuild — the build had
+    # succeeded and produced the artifact, and nothing was published (2026-11-20). `needs.dmg.result` is the
+    # condition that actually matters: the artifact this job downloads exists only if the build made it.
+    if: always() && needs.version.outputs.build == 'true' && needs.dmg.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
