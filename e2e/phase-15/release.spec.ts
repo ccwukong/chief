@@ -10,7 +10,7 @@ import { expect, ROOT_DIR, test } from "../helpers";
  *
  * A screenshot is an 8-bit truecolour PNG written by Chromium, so a small unfilter is enough. The case
  * that shows the pictures needs this because a caption is not evidence: the dark-theme screenshot was
- * the light theme for months of passing cases that never looked at a pixel (found 2026-11-20).
+ * the light theme, and every case passed because none of them looked at a pixel (found 2026-11-20).
  */
 function pngLuminance(file: string): { width: number; height: number; mean: number; darkShare: number } {
   const png = readFileSync(file);
