@@ -44,6 +44,52 @@ writeFileSync(join(stage, "app/package.json"), JSON.stringify({ name: "chief", p
   }
 console.log(`staged ${stage} (app/main.cjs, server/chief.mjs, ${version})`);
 
+/** How `hdiutil info` describes an attached image: the disk, and where it is mounted, if it is. */
+interface Attachment {
+  /** The whole disk, e.g. `/dev/disk5`; empty only when `hdiutil info` did not name one. */
+  device: string;
+  /** The mount point, e.g. `/Volumes/chief — drag to Applications 1`; empty while it is released. */
+  mount: string;
+}
+
+/**
+ * The image at `image` as `hdiutil info` sees it, or `null` when it is not attached.
+ *
+ * The **image path** is the identity, never the volume's name. A name is not unique: attaching a
+ * second volume called `chief — drag to Applications` mounts it as `… 1`, so a substring test on the
+ * name answers "attached" about the other disk, and `hdiutil detach` by that name ejects the other
+ * volume. Both were reproduced on a machine that had the published `.dmg` mounted while a build ran.
+ *
+ * The plist is the authority; the text output is the fallback for a `hdiutil` that will not answer one.
+ */
+function attachment(image: string): Attachment | null {
+  const info = spawnSync("hdiutil", ["info", "-plist"], { encoding: "utf8", timeout: 60_000 });
+  if (info.status === 0) {
+    const json = spawnSync("plutil", ["-convert", "json", "-o", "-", "-"], { encoding: "utf8", input: info.stdout ?? "", timeout: 60_000 });
+    if (json.status === 0) {
+      try {
+        const parsed = JSON.parse(json.stdout || "{}") as {
+          images?: { "image-path"?: string; "system-entities"?: { "dev-entry"?: string; "mount-point"?: string }[] }[];
+        };
+        const found = parsed.images?.find((i) => i["image-path"] === image);
+        if (!found) return null;
+        const entities = found["system-entities"] ?? [];
+        const mounted = entities.find((e) => e["mount-point"]);
+        return { device: entities[0]?.["dev-entry"] ?? mounted?.["dev-entry"] ?? "", mount: mounted?.["mount-point"] ?? "" };
+      } catch {
+        // Not JSON after all: the text output below carries the same facts.
+      }
+    }
+  }
+  const blocks = (spawnSync("hdiutil", ["info"], { encoding: "utf8", timeout: 60_000 }).stdout ?? "").split(/^=+$/m);
+  const block = blocks.find((b) => b.split("\n").some((l) => /^\s*image-path\s*:/.test(l) && l.slice(l.indexOf(":") + 1).trim() === image));
+  if (!block) return null;
+  return { device: /\/dev\/disk\d+/.exec(block)?.[0] ?? "", mount: /\/Volumes\/[^\t\n]+/.exec(block)?.[0].trim() ?? "" };
+}
+
+/** A failure a second attempt may not have: the volume was still being released. */
+class TransientImageError extends Error {}
+
 /**
  * Make `dist/chief.dmg` with the layout an installer is expected to have: chief on the left, an
  * `Applications` shortcut on the right, and the instruction written on the window. A bare
@@ -89,99 +135,197 @@ function makeDmg(): void {
   cpSync(app, join(layout, "chief.app"), { recursive: true, verbatimSymlinks: true });
   console.log(`staged the install folder ${layout} (chief.app, Applications → /Applications, .background/${backgroundName})`);
 
-  // Neither the read-write image nor its mount point goes in dist/: they are scratch, not an artifact,
-  // and the volume is detached before this returns.
-  const scratch = mkdtempSync(join(tmpdir(), "chief-dmg-"));
-  const rw = join(scratch, "chief-rw.dmg");
-  // Attached where macOS mounts volumes (`/Volumes/<the volume's name>`), not under the scratch folder:
-  // Finder only sees a disk that is in `/Volumes`, and Finder is the one that writes the layout.
-  let mount = "";
-  let attached = false;
-  const fail = (what: string, r: SpawnSyncReturns<string>): never => {
-    const detail = (r.error?.message ?? String(r.stderr || r.stdout || "")).trim();
-    throw new Error(`${what} failed${detail ? `: ${detail}` : ""}`);
-  };
-  // A synchronous pause for the retry loop below (no shell, no timer).
+  // A synchronous pause (no shell, no timer).
   const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-  // Still attached? `hdiutil info` lists every attached image and its mount point.
-  const stillAttached = (where: string): boolean =>
-    (spawnSync("hdiutil", ["info"], { encoding: "utf8", timeout: 60_000 }).stdout ?? "").includes(where);
-  // Detach, and do not return until the image is really gone: `hdiutil info` must list neither the mount
-  // point nor the image file itself. A volume that is still being released makes the conversion below fail
-  // with "Resource temporarily unavailable" — which is what CI did for 0.2.1 even after the mount point had
-  // disappeared from `hdiutil info`, so both are checked rather than just the mount.
-  const detach = (where: string, image: string): void => {
-    const gone = () => !stillAttached(where) && !stillAttached(image);
-    let last = spawnSync("hdiutil", ["detach", where, "-quiet"], { encoding: "utf8", timeout: 120_000 });
-    for (let i = 0; i < 40 && !gone(); i++) {
-      if (i % 8 === 0) last = spawnSync("hdiutil", ["detach", where, "-quiet", "-force"], { encoding: "utf8", timeout: 120_000 });
-      pause(250);
-    }
-    if (!gone()) fail("hdiutil detach", last);
+  const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+  const output = (r: SpawnSyncReturns<string>) => `${r.stderr ?? ""}${r.stdout ?? ""}`.trim();
+  // The answers `hdiutil` gives while a volume, or the image behind it, is still being released.
+  const transient = (r: SpawnSyncReturns<string>) => /Resource\s+(temporarily\s+unavailable|busy)|couldn.t unmount .*- Resource busy/i.test(output(r));
+  const step = (what: string, r: SpawnSyncReturns<string>): void => {
+    if (r.status === 0) return;
+    const detail = output(r) || r.error?.message || "";
+    const message = `${what} failed${detail ? `: ${detail}` : ""}`;
+    // A busy image is worth another attempt; a bad path or a full disk is not.
+    throw transient(r) ? new TransientImageError(message) : new Error(message);
   };
-  try {
-    const hdi = spawnSync("hdiutil", ["create", "-volname", VOLUME, "-srcfolder", layout, "-ov", "-format", "UDRW", "-fs", "HFS+", rw], { encoding: "utf8", timeout: 600_000 });
-    if (hdi.status !== 0) fail("hdiutil create", hdi);
-    const at = spawnSync("hdiutil", ["attach", "-readwrite", "-noverify", "-noautoopen", rw], { encoding: "utf8", timeout: 120_000 });
-    if (at.status !== 0) fail("hdiutil attach", at);
-    attached = true;
-    // The mount point is the last column of the attach output's last line (`/Volumes/<name>`, or
-    // `/Volumes/<name> 1` when that name was already taken).
-    mount = /\t(\/Volumes\/[^\t\n]+)\s*$/m.exec(at.stdout ?? "")?.[1]?.trim() ?? join("/Volumes", VOLUME);
-    const disk = basename(mount);
+
+  // Patience is free: a DMG build may take minutes, and a loaded runner can take tens of seconds to
+  // release a 128 MB volume. The ten seconds the old loop allowed is what failed the E10.5-1 case on
+  // CI (run 44762380794) with a detach that had nothing left to wait for but was not there yet.
+  const ATTACH_WAIT_MS = 20_000;
+  const DETACH_GENTLE_MS = 12_000;
+  const DETACH_TOTAL_MS = 45_000;
+  const CONVERT_RELEASE_MS = 45_000;
+  const IMAGE_BUDGET_MS = 240_000;
+
+  /**
+   * Why the volume would not go away, with the evidence: `hdiutil`'s own stderr (asked again without
+   * `-quiet`, which is why CI's message had none) and whatever `lsof` finds holding it.
+   */
+  const whyStillAttached = (image: string, at: Attachment, said: string, elapsed: number): TransientImageError => {
+    const where = at.device || at.mount;
+    const probe = where ? spawnSync("hdiutil", ["detach", where], { encoding: "utf8", timeout: 120_000 }) : null;
+    const holders = at.mount
+      ? (spawnSync("lsof", ["+c", "0", "+D", at.mount], { encoding: "utf8", timeout: 120_000 }).stdout ?? "").trim()
+      : "";
+    // Both matter: the loop's last answer may be a deprecation warning (macOS 27 prints one on success
+    // too), and the probe's answer is the real reason this time. Neither is allowed to hide the other.
+    const spoken = [...new Set([said, probe ? output(probe) : ""].map((s) => s.trim()).filter(Boolean))].join("\n");
+    return new TransientImageError([
+      `hdiutil detach failed after ${secs(elapsed)}: ${where || image}${at.mount ? ` (${at.mount})` : ""} is still attached to ${image}`,
+      spoken ? `hdiutil said: ${spoken}` : "",
+      holders ? `processes holding it (lsof):\n${holders.split("\n").slice(0, 12).join("\n")}` : "lsof found no process holding a file in it",
+    ].filter(Boolean).join("\n"));
+  };
+
+  /**
+   * Detach the image and do not return until `hdiutil info` no longer lists it: the mount point going
+   * away is not the same as the image being released, and `hdiutil convert` answers "Resource
+   * temporarily unavailable" while it is (the 0.2.1 build failed exactly there). The first detaches are
+   * gentle, because a volume Finder is still writing deserves them; forced ones start after
+   * DETACH_GENTLE_MS. It is detached by **device**, taken from `hdiutil info`, so a name another mounted
+   * volume also carries can neither be mistaken for ours nor be ejected in ours.
+   */
+  const detach = (image: string): void => {
+    const started = Date.now();
+    let said = "";
+    for (;;) {
+      const at = attachment(image);
+      if (!at) {
+        console.log(`hdiutil detach: released after ${secs(Date.now() - started)}`);
+        return;
+      }
+      const where = at.device || at.mount;
+      if (!where) throw new TransientImageError(`hdiutil detach failed: ${image} is attached but hdiutil info names neither a device nor a mount point for it`);
+      const elapsed = Date.now() - started;
+      if (elapsed >= DETACH_TOTAL_MS) {
+        const why = whyStillAttached(image, at, said, elapsed);
+        // The probe inside the message is itself a real, unforced attempt: it may have been the one that worked.
+        if (!attachment(image)) {
+          console.log(`hdiutil detach: released after ${secs(Date.now() - started)}`);
+          return;
+        }
+        throw why;
+      }
+      const forced = elapsed >= DETACH_GENTLE_MS;
+      const r = spawnSync("hdiutil", ["detach", where, ...(forced ? ["-force"] : [])], { encoding: "utf8", timeout: 120_000 });
+      const text = output(r);
+      if (text) said = text;
+      pause(forced ? 1_000 : 250);
+    }
+  };
+
+  /** One attempt: a fresh scratch image, through create → attach → layout → detach → convert. */
+  const buildImage = (attempt: number): void => {
+    const scratch = mkdtempSync(join(tmpdir(), "chief-dmg-"));
+    const rw = join(scratch, "chief-rw.dmg");
+    const started = Date.now();
     try {
-      // Finder writes the `.DS_Store` that makes the positions and the picture stick. A build machine has
-      // no Finder (and nobody to grant the automation permission), so a failure here is a warning and the
-      // build goes on: the volume still holds the app, the shortcut and the `Applications` in its own
-      // name, which is the hint a person reads when the window cannot be arranged.
-      const script = [
-        'tell application "Finder"',
-        `  tell disk "${disk}"`,
-        "    open",
-        "    set current view of container window to icon view",
-        "    set toolbar visible of container window to false",
-        "    set statusbar visible of container window to false",
-        `    set the bounds of container window to {${WINDOW.left}, ${WINDOW.top}, ${WINDOW.right}, ${WINDOW.bottom}}`,
-        "    set theViewOptions to the icon view options of container window",
-        "    set arrangement of theViewOptions to not arranged",
-        `    set icon size of theViewOptions to ${ICON_SIZE}`,
-        // The picture is inside the volume, so the path Finder records in the `.DS_Store` travels with it.
-        `    set background picture of theViewOptions to file ".background:${backgroundName}"`,
-        `    set position of item "chief.app" of container window to {${CHIEF_AT.x}, ${CHIEF_AT.y}}`,
-        `    set position of item "Applications" of container window to {${APPLICATIONS_AT.x}, ${APPLICATIONS_AT.y}}`,
-        "    update without registering applications",
-        "    delay 1",
-        "    close",
-        "  end tell",
-        "end tell",
-      ].join("\n");
-      const look = spawnSync("osascript", ["-e", script], { encoding: "utf8", timeout: 60_000 });
-      if (look.status !== 0) {
-        const detail = (look.error?.message ?? String(look.stderr || look.stdout || "")).trim();
-        console.warn(`warning: Finder did not lay out the installer window${detail ? `: ${detail}` : ""}. The volume still says "${VOLUME}" and holds chief.app and the Applications shortcut.`);
+      const createStart = Date.now();
+      step(`hdiutil create (attempt ${attempt})`, spawnSync("hdiutil", ["create", "-volname", VOLUME, "-srcfolder", layout, "-ov", "-format", "UDRW", "-fs", "HFS+", rw], { encoding: "utf8", timeout: 600_000 }));
+      console.log(`hdiutil create: ${secs(Date.now() - createStart)} → ${rw}`);
+
+      const attachStart = Date.now();
+      step(`hdiutil attach (attempt ${attempt})`, spawnSync("hdiutil", ["attach", "-readwrite", "-noverify", "-noautoopen", rw], { encoding: "utf8", timeout: 120_000 }));
+      // The attach status is not the mount: wait until `hdiutil info` knows the image and where it is.
+      // The mount point is `/Volumes/<the volume's name>`, or `… 1` when that name is taken, which is
+      // also the name Finder needs; it comes from `hdiutil info` rather than a guess at the output.
+      let at: Attachment | null = null;
+      for (let waited = 0; waited < ATTACH_WAIT_MS; waited += 250) {
+        at = attachment(rw);
+        if (at?.mount) break;
+        pause(250);
       }
-      // Finder's writes are still reaching the image when the script returns.
-      spawnSync("sync", [], { timeout: 30_000 });
+      if (!at?.mount) throw new TransientImageError(`hdiutil attach reported success but ${rw} is not mounted after ${secs(ATTACH_WAIT_MS)}`);
+      const mount = at.mount;
+      console.log(`hdiutil attach: ${secs(Date.now() - attachStart)} → ${mount} (${at.device || "no device named"})`);
+      const disk = basename(mount);
+      try {
+        // Finder writes the `.DS_Store` that makes the positions and the picture stick. A build machine has
+        // no Finder (and nobody to grant the automation permission), so a failure here is a warning and the
+        // build goes on: the volume still holds the app, the shortcut and the `Applications` in its own
+        // name, which is the hint a person reads when the window cannot be arranged.
+        const script = [
+          'tell application "Finder"',
+          `  tell disk "${disk}"`,
+          "    open",
+          "    set current view of container window to icon view",
+          "    set toolbar visible of container window to false",
+          "    set statusbar visible of container window to false",
+          `    set the bounds of container window to {${WINDOW.left}, ${WINDOW.top}, ${WINDOW.right}, ${WINDOW.bottom}}`,
+          "    set theViewOptions to the icon view options of container window",
+          "    set arrangement of theViewOptions to not arranged",
+          `    set icon size of theViewOptions to ${ICON_SIZE}`,
+          // The picture is inside the volume, so the path Finder records in the `.DS_Store` travels with it.
+          `    set background picture of theViewOptions to file ".background:${backgroundName}"`,
+          `    set position of item "chief.app" of container window to {${CHIEF_AT.x}, ${CHIEF_AT.y}}`,
+          `    set position of item "Applications" of container window to {${APPLICATIONS_AT.x}, ${APPLICATIONS_AT.y}}`,
+          "    update without registering applications",
+          "    delay 1",
+          "    close",
+          "  end tell",
+          "end tell",
+        ].join("\n");
+        const look = spawnSync("osascript", ["-e", script], { encoding: "utf8", timeout: 60_000 });
+        if (look.status !== 0) {
+          const detail = (look.error?.message ?? String(look.stderr || look.stdout || "")).trim();
+          console.warn(`warning: Finder did not lay out the installer window${detail ? `: ${detail}` : ""}. The volume still says "${VOLUME}" and holds chief.app and the Applications shortcut.`);
+        }
+        // Finder's writes are still reaching the image when the script returns.
+        spawnSync("sync", [], { timeout: 30_000 });
+      } finally {
+        detach(rw);
+      }
+
+      // `hdiutil convert` answers "Resource temporarily unavailable" while the image it is reading is still
+      // being released. Only that answer is retried — long enough for a loaded runner to finish releasing —
+      // and anything else (a bad path, no space) is a real error and is reported at once.
+      const convertStart = Date.now();
+      let conv = spawnSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { encoding: "utf8", timeout: 600_000 });
+      while (conv.status !== 0 && transient(conv) && Date.now() - convertStart < CONVERT_RELEASE_MS) {
+        pause(1_000);
+        conv = spawnSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { encoding: "utf8", timeout: 600_000 });
+      }
+      if (conv.status !== 0) {
+        const detail = output(conv) || conv.error?.message || "";
+        const message = `hdiutil convert failed${detail ? `: ${detail}` : ""}`;
+        if (transient(conv)) throw new TransientImageError(`${message} (after ${secs(Date.now() - convertStart)} waiting for the image to be released)`);
+        throw new Error(message);
+      }
+      console.log(`hdiutil convert: ${secs(Date.now() - convertStart)} → ${dmg}`);
+      console.log(`made ${dmg} in ${secs(Date.now() - started)} (attempt ${attempt})`);
     } finally {
-      if (attached) {
-        detach(mount, rw);
-        attached = false;
+      // Best effort, and it must not hide the error that got here: this runs after a failure too. It
+      // never detaches `""` — a mount point that was never resolved is not a path (an empty string is a
+      // substring of everything, which is how the old loop could spin on a volume it could not name).
+      const left = attachment(rw);
+      const target = left ? left.device || left.mount : "";
+      if (target) spawnSync("hdiutil", ["detach", target, "-force"], { encoding: "utf8", timeout: 120_000 });
+      if (!target) {
+        rmSync(scratch, { recursive: true, force: true });
+      } else if (attachment(rw)) {
+        // Unlinking the file behind a still-mounted volume would leave macOS with a disk whose image is
+        // gone. Leave both, and say where, so a person can see what happened instead of chasing a phantom.
+        console.warn(`warning: ${rw} is still attached as ${target} (attempt ${attempt}); its scratch folder ${scratch} is left in place rather than deleting the image behind a mounted volume`);
+      } else {
+        rmSync(scratch, { recursive: true, force: true });
       }
     }
-    // `hdiutil convert` answers "Resource temporarily unavailable" while the image it is reading is still
-    // being released — a moment, not a condition, and the one that failed the 0.2.1 build on CI. Only that
-    // answer is retried; anything else (a bad path, no space) is a real error and is reported at once.
-    const transient = /Resource\s+(temporarily\s+unavailable|busy)/i;
-    let conv = spawnSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { encoding: "utf8", timeout: 600_000 });
-    for (let i = 0; i < 15 && conv.status !== 0 && transient.test(`${conv.stderr ?? ""}${conv.stdout ?? ""}`); i++) {
-      pause(1_000);
-      conv = spawnSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { encoding: "utf8", timeout: 600_000 });
+  };
+
+  // One attempt, then one retry — only when the volume refused to go, and with a fresh scratch folder
+  // and a fresh image. A genuinely broken build (no space, a bad path) fails at once, with its message.
+  const deadline = Date.now() + IMAGE_BUDGET_MS;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      buildImage(attempt);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!(err instanceof TransientImageError) || Date.now() + 40_000 > deadline) throw err;
+      console.warn(`warning: ${message}\nwarning: making the disk image again in a fresh scratch folder (attempt ${attempt + 1})`);
+      pause(2_000);
     }
-    if (conv.status !== 0) fail("hdiutil convert", conv);
-  } finally {
-    // Best effort: this runs after a failure too, and must not hide the error that got here.
-    if (attached && (stillAttached(mount) || stillAttached(rw))) spawnSync("hdiutil", ["detach", mount, "-quiet", "-force"], { encoding: "utf8", timeout: 120_000 });
-    rmSync(scratch, { recursive: true, force: true });
   }
 }
 

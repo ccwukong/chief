@@ -24,7 +24,9 @@ export default defineConfig({
     // most two visible windows compete for the pointer; more than that made drags miss.
     { name: "browser", testMatch: /ui\.spec\.ts$/, fullyParallel: false },
     // The desktop app: Electron windows, one case after another (they share one build and one pointer).
-    // The app is macOS only (dev plan §3), so Linux CI does not run these cases.
-    ...(process.platform === "darwin" ? [{ name: "desktop", testMatch: /e2e\/desktop\/.*\.spec\.ts$/, fullyParallel: false, timeout: 120_000 }] : []),
+    // The app is macOS only (dev plan §3), so Linux CI does not run these cases. The allowance is five
+    // minutes because the .dmg cases build the image, and that build may now wait out a volume macOS is
+    // still releasing and, failing that, make one fresh image (15.31) — patience the case never asserts.
+    ...(process.platform === "darwin" ? [{ name: "desktop", testMatch: /e2e\/desktop\/.*\.spec\.ts$/, fullyParallel: false, timeout: 300_000 }] : []),
   ],
 });
