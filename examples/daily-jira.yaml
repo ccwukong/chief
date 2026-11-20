@@ -1,0 +1,62 @@
+# Daily triage that starts from Jira (Atlassian).
+name: daily-jira
+description: Tickets assigned to you or waiting on you, then act on the ones you pick.
+agent: claude-code
+budget: { warn-usd: 2.00, max-usd: 4.00 }
+inputs:
+  lookback-hours: 24
+  carry-over: null
+
+nodes:
+  - id: plan
+    type: agent
+    mcp: [atlassian]
+    model: sonnet
+    prompt: |
+      Read only. Do not comment, transition or change anything.
+
+      Using Jira, list what needs my attention: tickets assigned to me that changed in the last
+      {{inputs.lookback-hours}} hours, tickets where I am mentioned, and tickets of mine that are
+      blocked or waiting for my input.
+      For each: a short title including the ticket key, a kind (jira | doc | other),
+      a priority (P0 to P3), and the URL.
+
+      Still open from before:
+      - carried over: {{inputs.carry-over}}
+    output-schema:
+      summary: string
+      items: [{ title: string, kind: string, priority: string, url }]
+
+  - id: choose
+    type: gate
+    kind: select
+    from: "{{nodes.plan.output.items}}"
+
+  - id: act
+    type: map
+    over: "{{nodes.choose.output.selected}}"
+    mode: "{{nodes.choose.output.mode}}"
+    max-parallel: 3
+    on-error: continue
+    node:
+      type: agent
+      mcp: [atlassian]
+      prompt: |
+        Action item: {{item}}
+
+        Read the ticket and its recent comments, then propose the next step: a comment, a status
+        change, or a description update. Ask first (needs_input) with the exact text before
+        changing anything.
+
+        Report every write you performed in side_effects.
+      output-schema: { result: string }
+      compensate:
+        prompt: "Undo these side effects where possible: {{output.side_effects}}"
+
+  - id: feedback
+    type: gate
+    kind: input
+    summary: "{{nodes.act.output}}"
+    options: [done, restart]
+
+edges: [plan -> choose, choose -> act, act -> feedback]

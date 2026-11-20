@@ -1,0 +1,137 @@
+# The landing page, published to GitHub Pages from `site/` (dev plan §7, 15.20).
+#
+# `node scripts/build-site.mjs` assembles `site/dist/`: the page and its stylesheet, chief's logo, and the
+# screenshots the README already shows. Publishing that folder rather than the repository root keeps the
+# plans and the source out of the site, and it means the page can state the version and the .dmg's size.
+#
+# Pages must be enabled for the repository with "GitHub Actions" as its source (Settings → Pages). On a
+# free plan that needs a public repository; a private one needs a paid plan.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/screenshots/**"
+      - "packages/web/public/logo.svg"
+      - "scripts/build-site.mjs"
+      # The download counter is baked in from the ledger (task 15.29), so a tally commit changes the page.
+      - "downloads.json"
+      - ".github/workflows/pages.yml"
+  # A new release changes the download link the page points at (the asset is named for its version), so the
+  # page is published again as soon as a release appears.
+  #
+  # This is `workflow_run` and not `release: published`, and the difference is the whole point: an event
+  # raised by a workflow's own `GITHUB_TOKEN` does not start another workflow (GitHub's loop guard), so the
+  # release the `desktop` workflow publishes can never trigger this one through `release`. A workflow
+  # completing is a different kind of event and is not suppressed, so `desktop` finishing — whether it
+  # built a release, decided there was nothing to build, or was started by hand — republishes the page.
+  workflow_run:
+    workflows: [desktop]
+    types: [completed]
+  # Still accepted, for a release published by a person in the web UI.
+  release:
+    types: [published]
+  # And once a day, because nothing above covers a page whose inputs changed for another reason (the ledger
+  # is read at build time, and a tally commit cannot start a workflow).
+  schedule:
+    - cron: "40 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer one does not cancel a run that is already publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.pages.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+
+      # The download link has to name the versioned asset, and the page states its size. Pages builds no
+      # app, so both come from the newest release — the one whose tag carries the highest version.
+      #
+      # The asset is `chief-<version>-apple-silicon.dmg`, so it is matched by its shape rather than by a
+      # version written down here: the page keeps working for every version without an edit. `arm64` is the
+      # machine value the build compares, never part of a file name.
+      - id: dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases.json
+          node - "$GITHUB_OUTPUT" <<'NODE'
+          const fs = require("node:fs");
+          const releases = JSON.parse(fs.readFileSync("releases.json", "utf8"));
+          const semver = (tag) => String(tag).replace(/^v/, "").split("-")[0].split(".").map((n) => parseInt(n, 10) || 0);
+          const newestFirst = releases
+            .filter((r) => !r.draft)
+            .sort((a, b) => {
+              const [x, y] = [semver(a.tag_name), semver(b.tag_name)];
+              for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (y[i] || 0) - (x[i] || 0);
+              return 0;
+            });
+          const asset = newestFirst.flatMap((r) => r.assets ?? []).find((a) => /^chief-.+-apple-silicon\.dmg$/.test(a.name));
+          const out = [];
+          if (asset) {
+            out.push(`url=${asset.browser_download_url}`);
+            out.push(`size=${Math.round((asset.size + 500000) / 1000000)} MB`);
+            console.log(`the newest release's download is ${asset.name} (${asset.size} bytes)`);
+          } else if (releases.length === 0) {
+            console.log("::notice title=No release yet::the page links to the releases page until one is published");
+          } else {
+            console.log("::notice title=No .dmg in the newest release::the page links to the releases page");
+          }
+          fs.appendFileSync(process.argv[2], out.join("\n") + (out.length ? "\n" : ""));
+          NODE
+
+      - run: node scripts/build-site.mjs
+        env:
+          CHIEF_DMG_URL: ${{ steps.dmg.outputs.url }}
+          CHIEF_DMG_SIZE: ${{ steps.dmg.outputs.size }}
+
+      # Pages has to be switched on for the repository (Settings → Pages → Source: GitHub Actions) before
+      # anything can be deployed. Until then this job builds the page and says so, rather than failing on
+      # every push: a red X that means "a setting a person must click" teaches people to ignore red Xs.
+      - id: pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/pages" >/dev/null 2>&1; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Pages is off::GitHub Pages is not enabled for this repository, so the page was built and not deployed. Settings -> Pages -> Source: GitHub Actions."
+          fi
+
+      - if: steps.pages.outputs.ready == 'true'
+        uses: actions/configure-pages@v5
+      - if: steps.pages.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

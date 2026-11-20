@@ -1,0 +1,18 @@
+{
+  "name": "desktop",
+  "private": true,
+  "version": "0.2.1",
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "chief for macOS: an Electron window over the same server that `chief serve` runs",
+  "scripts": {
+    "dev": "node scripts/dev.ts",
+    "build": "node scripts/build.ts",
+    "package": "node scripts/build.ts --package",
+    "render:dmg-background": "node scripts/render-dmg-background.ts"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^45.4.1"
+  }
+}
