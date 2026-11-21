@@ -11,6 +11,18 @@ and not yet in a version.
 
 Nothing yet.
 
+## [0.2.4] — 2026-11-21
+
+### Changed
+
+- **The About panel no longer shows a copyright line or a personal name.** The notice that has to travel
+  with a copy of chief is in the app's own licence file (`Chief.app/Contents/Resources/server/LICENSE`),
+  which is where the Apache licence asks for it; a menu repeating it added nothing.
+- **There are terms, in plain words.** [docs/terms.md](docs/terms.md), and the same page on the site at
+  <https://ccwukong.github.io/chief/terms.html>: chief comes as it is, with no warranty, and nobody is
+  liable if using it loses you data, work or time. Nothing in them narrows what the Apache-2.0 licence
+  grants you — a terms page cannot, and saying so is the point.
+
 ## [0.2.3] — 2026-11-21
 
 ### Added
