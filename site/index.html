@@ -238,6 +238,13 @@
             </li>
             <li>
               <b>Clear the warning once</b>
+              <span class="tiny">
+                The first time you open it, macOS says <i>“chief” cannot be opened because the developer
+                cannot be verified</i>, with only <b>Move to Bin</b> offered. That is macOS checking an app
+                nobody has notarized — not a damaged download, and the app is not going anywhere. Click
+                <b>Done</b>, then run this once in Terminal: it clears the “downloaded from the internet”
+                mark from this copy, and chief opens normally from then on.
+              </span>
               <div class="cmd"><code>xattr -dr com.apple.quarantine /Applications/chief.app</code><button class="copy" data-copy="xattr -dr com.apple.quarantine /Applications/chief.app" type="button">Copy</button></div>
             </li>
           </ol>

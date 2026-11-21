@@ -155,3 +155,34 @@ test("E15.32-5 the chatbox writes it: asked in the designer, the panel says what
     await srv.stop();
   }
 });
+
+test("E15.32-6 asked from the panel that is not the designer, it schedules the workflow it names — the case a person actually hits", async ({ chief }) => {
+  const s = await chief.serve();
+  try {
+    chief.importWorkflow(imported);
+    chief.importWorkflow("name: other\nnodes:\n  - { id: b, type: agent, prompt: 'B' }\n");
+    const old = (await s.api("POST", "/api/schedules", { workflow: "other", cron: "0 8 * * *" })).body;
+
+    // No `workflow` in the request at all: the panel is open on chief as a whole, which is where the person
+    // asked "are you able to set a scheduler for a workflow for me?" and was told no (2026-11-21).
+    const a = await s.api("POST", "/api/assistant", { question: `schedule the daily workflow every weekday at 9am ${fake({ text: `Scheduled it.\n\n${block("chief-schedule", { action: "create", workflow: "daily", cron: "0 9 * * 1-5" })}` })}` });
+    expect(a.status).toBe(200);
+    expect(a.body).toMatchObject({ answer: "Scheduled it.", schedule_error: null, change: null, workflow: null });
+    expect(a.body.schedule).toMatchObject({ action: "create", workflow: "daily", cron: "0 9 * * 1-5" });
+    // It was given the block's rules and every workflow's schedules with their ids, which is what it needs
+    // here: there is no canvas to imply the workflow.
+    const prompt = chief.calls().at(-1)!.prompt;
+    expect(prompt).toContain("## Schedules");
+    expect(prompt).toContain(`#${old.id}: \`0 8 * * *\``);
+    expect(prompt).toContain("other");
+
+    // A create that names no workflow cannot be guessed at from this panel, and says so plainly.
+    await s.api("DELETE", "/api/assistant");
+    const b = await s.api("POST", "/api/assistant", { question: `schedule it ${fake({ text: `Done.\n\n${block("chief-schedule", { action: "create", cron: "0 6 * * *" })}` })}` });
+    expect(b.body.schedule).toBeNull();
+    expect(b.body.schedule_error).toContain("say which workflow");
+    expect((await schedules(s)).length).toBe(2);
+  } finally {
+    await s.stop();
+  }
+});

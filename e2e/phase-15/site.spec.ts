@@ -189,3 +189,57 @@ test("E15.27-1 chief bot's screenshot comes from a real exchange in the designer
   // And the file it writes is the one the page and the README show (E15.19-1, E15.20-1).
   expect(existsSync(join(ROOT_DIR, "docs/screenshots/chief-bot.png"))).toBe(true);
 });
+
+/**
+ * The landing page's own layout and contrast, as a reader meets them (reported 2026-11-21): the nav links
+ * and the Download pill did not share a centre line, the download button's "Apple silicon · v…" chip was
+ * mint on mint in the dark theme (1.1:1 — *"barely visible"*), and the quarantine step gave a command
+ * without saying what warning it was for.
+ */
+test("E15.20-4 the nav is centred on one line, the download chip is readable in both themes, and the quarantine step says what the warning is", async ({ page }) => {
+  const out = build();
+  // The built page with its stylesheet, from the file system: no network, no server.
+  await page.goto(`file://${join(out, "index.html")}`);
+
+  // One axis: the links, the pill and the theme button all share a vertical centre, within a pixel.
+  const mid = async (sel: string) => {
+    const b = (await page.locator(sel).first().boundingBox())!;
+    return b.y + b.height / 2;
+  };
+  const [link, cta, theme] = [await mid(".nav-links a"), await mid(".nav-cta"), await mid(".theme")];
+  expect(Math.abs(link - cta), "the links and the Download pill").toBeLessThan(1.5);
+  expect(Math.abs(cta - theme), "the Download pill and the theme button").toBeLessThan(1.5);
+
+  // The chip is text on the filled button in both themes; it was mint on a lightened mint in the dark.
+  const chipContrast = async () => page.evaluate(() => {
+    const el = document.querySelector(".btn-primary .chip")!;
+    const rgbOf = (css: string) => {
+      const c = document.createElement("canvas"); c.width = 1; c.height = 1;
+      const ctx = c.getContext("2d")!;
+      ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      return { r, g, b };
+    };
+    const lum = ({ r, g, b }: { r: number; g: number; b: number }) => { const f = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    // The chip's own plate is translucent: its colour over the button is what a reader sees.
+    const base = getComputedStyle(el.parentElement!).backgroundColor;
+    const plate = getComputedStyle(el).backgroundColor;
+    const ctx = document.createElement("canvas"); ctx.width = 1; ctx.height = 1;
+    const c = ctx.getContext("2d")!;
+    c.fillStyle = base; c.fillRect(0, 0, 1, 1);
+    c.fillStyle = plate; c.fillRect(0, 0, 1, 1);
+    const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
+    const [a, bb] = [lum(rgbOf(getComputedStyle(el).color)), lum({ r, g, b })].sort((x, y) => y - x);
+    return +((a + 0.05) / (bb + 0.05)).toFixed(2);
+  });
+  expect(await chipContrast(), "the chip in the light theme").toBeGreaterThan(4.5);
+  await page.locator("#theme").click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
+  expect(await chipContrast(), "the chip in the dark theme").toBeGreaterThan(4.5);
+
+  // The step names the dialog and the button, so a person who has just seen it knows which one it is.
+  const step = page.locator('[data-testid="mode-desktop"] ol li').last();
+  await expect(step).toContainText("cannot be opened because the developer cannot be verified");
+  await expect(step).toContainText("Move to Bin");
+  await expect(step).toContainText("xattr -dr com.apple.quarantine");
+});

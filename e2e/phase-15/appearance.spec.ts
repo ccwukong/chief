@@ -1,5 +1,7 @@
-import { expect, test, type Server } from "../helpers";
+import { expect, fake, ROOT_DIR, test, type Server } from "../helpers";
 import type { Page } from "@playwright/test";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Phase 15, task 15.8: appearance — the theme (light, dark, system) and the text size. Both are chief's
@@ -147,6 +149,89 @@ test("E15.8-2 the text size is one scale for the whole app, and the person choos
     await tid(page, "setting-font-size").selectOption("small");
     await expect.poll(async () => (await settings(srv))["font-size"]).toBe("small");
     expect((await sizes()).body).toBeCloseTo(12.6, 1);
+  } finally {
+    await srv.stop();
+  }
+});
+
+/**
+ * The coloured cards in the assistant's answers (the canvas change in purple, the schedule in teal) are
+ * the one place the app paints a tinted panel, and a tint's text is a different ramp end from the page's:
+ * `text-purple-950` on `bg-purple-50`. The dark theme turned 50–300 dark and 700–900 light but never
+ * defined 950, so `text-purple-950` kept its light-theme near-black on a dark card: 1.16:1, reported
+ * 2026-11-21 as *"the text in purple is barely visible"*. Teal was not in the dark ramp at all.
+ */
+test("E15.8-3 every tinted card's text is readable in the dark theme, and every colour the app reaches for is themed", async ({ chief, page }) => {
+  // Static half: every `<bg|text|border>-<family>-<step>` in the web sources has a dark value. A family that
+  // is missing from the dark palette is the whole bug, and this catches the next one without a screenshot.
+  const dark = readFileSync(join(ROOT_DIR, "packages/web/src/styles.css"), "utf8");
+  const block = /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(dark)![1];
+  const defined = new Set([...block.matchAll(/--color-([a-z]+)-(\d+):/g)].map((m) => `${m[1]}-${m[2]}`));
+  const used = new Set<string>();
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.(tsx?|css)$/.test(e.name)) continue;
+      for (const m of readFileSync(p, "utf8").matchAll(/\b(?:bg|text|border|ring|outline)-((?:slate|red|amber|green|emerald|blue|orange|sky|purple|teal|indigo|pink|rose|cyan|lime|yellow|violet|fuchsia)-[0-9]+)\b/g)) used.add(m[1]);
+    }
+  };
+  walk(join(ROOT_DIR, "packages/web/src"));
+  expect(used.size).toBeGreaterThan(20);
+  // The ends of each tint are themed (`50`–`300` dark surfaces, `700`–`950` light text); a `400`–`600` is
+  // deliberately left saturated, which is what a filled button or a border wants in either theme. So only
+  // the ends are required — and `950`, the end that was missing, is one of them.
+  const end = (c: string) => { const n = +c.split("-").pop()!; return n <= 300 || n >= 700; };
+  expect([...used].filter((c) => !c.startsWith("slate-") && end(c) && !defined.has(c)), "colour classes with no dark value").toEqual([]);
+  // The two ends the cards use are there, and nowhere near their light-theme values.
+  for (const c of ["purple-50", "purple-950", "teal-50", "teal-950"]) expect(defined.has(c), c).toBe(true);
+
+  // Live half: the two cards, in the dark theme, measured as they render.
+  chief.importWorkflow("name: daily\nnodes:\n  - { id: collect, type: agent, prompt: 'Collect.' }\n");
+  const srv = await chief.serve();
+  try {
+    await srv.api("PUT", "/api/settings", { theme: "dark" });
+    await page.goto(`${srv.url}/#/designer/daily`);
+    await tid(page, "assistant-button").click();
+    const wf = JSON.stringify({ name: "daily", nodes: [{ id: "collect", type: "agent", prompt: "Collect." }], edges: [], description: "Daily digest" });
+    const sched = JSON.stringify({ action: "create", cron: "0 9 * * 1-5" });
+    await tid(page, "assistant-question").fill(`describe and schedule it ${fake({ text: `Done.\n\n\`\`\`chief-workflow\n${wf}\n\`\`\`\n\n\`\`\`chief-schedule\n${sched}\n\`\`\`` })}`);
+    await tid(page, "assistant-send").click();
+    await expect(tid(page, "assistant-change")).toBeVisible();
+    await expect(tid(page, "assistant-schedule")).toBeVisible();
+
+    const ratios = await page.evaluate(() => {
+      const rgbOf = (css: string) => {
+        const c = document.createElement("canvas"); c.width = 1; c.height = 1;
+        const ctx = c.getContext("2d")!;
+        ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return { r, g, b };
+      };
+      const lum = ({ r, g, b }: { r: number; g: number; b: number }) => { const f = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      // Every element in a card that holds its own text, against the nearest painted ancestor.
+      const out: Record<string, number> = {};
+      for (const id of ["assistant-change", "assistant-schedule"]) {
+        const card = document.querySelector(`[data-testid="${id}"]`)!;
+        let worst = Infinity;
+        for (const el of [card, ...card.querySelectorAll("*")]) {
+          const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim());
+          if (!own) continue;
+          let bgc = "";
+          for (let e: Element | null = el; e; e = e.parentElement) {
+            const c = getComputedStyle(e).backgroundColor;
+            if (c && !/rgba\(0, 0, 0, 0\)|transparent/.test(c)) { bgc = c; break; }
+          }
+          const [a, b] = [lum(rgbOf(getComputedStyle(el).color)), lum(rgbOf(bgc || "rgb(255,255,255)"))].sort((x, y) => y - x);
+          worst = Math.min(worst, (a + 0.05) / (b + 0.05));
+        }
+        out[id] = +worst.toFixed(2);
+      }
+      return out;
+    });
+    // 4.5 is the WCAG AA floor for body text; these are 14.7 and 14.6 now, and were 1.16 and 1.1.
+    expect(ratios["assistant-change"], "the purple change card").toBeGreaterThan(4.5);
+    expect(ratios["assistant-schedule"], "the teal schedule card").toBeGreaterThan(4.5);
   } finally {
     await srv.stop();
   }

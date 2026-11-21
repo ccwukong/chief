@@ -166,6 +166,19 @@ export function summarizeChange(before: any, after: any): string[] {
 
 // ── what the agent is told ─────────────────────────────────────────────────
 
+/**
+ * What the assistant may do about schedules, in both modes: the designer and the panel opened elsewhere.
+ * Shared so the two cannot describe the same block differently (task 15.32).
+ */
+export const SCHEDULE_INSTRUCTIONS = [
+  "## Schedules",
+  "A workflow can start itself on a cron schedule. The list below gives each workflow's schedules with their ids; use those ids. To add or change one, end your reply with a fenced block whose first line is ```chief-schedule holding one JSON object, and chief writes it straight away:",
+  '- New: {"action": "create", "cron": "0 9 * * 1-5", "inputs": {}} — five fields, minutes first, in the machine\'s own time zone. It belongs to the workflow this conversation is about; name that workflow in `workflow` when the conversation is not about one in particular.',
+  '- Change: {"action": "update", "id": 3, "cron": "30 18 * * *"} — any of `cron`, `inputs`, or `enabled` (false pauses it, true starts it again). The id must belong to the workflow this conversation is about; to change another workflow\'s schedule, name that workflow in `workflow` and only do it when the person asked for it by name.',
+  "This is the one thing you can carry out: everything else you explain or put on the canvas. You cannot delete a schedule — say that the Schedules page has a Remove button. Say the time in words in your reply (\"every weekday at 09:00\") as well as giving the expression, so the person can check it at a glance, and never send this block when the person is only asking about a schedule.",
+  "",
+];
+
 export const DESIGN_INSTRUCTIONS = [
   "You are the assistant in chief, a local tool that runs automated workflows made of steps. The person is in chief's designer, looking at a workflow on a canvas, and talks to you to build or change it. You answer questions about it and, when a change is wanted, you make the change: chief puts the workflow you send on the canvas at once.",
   "",
@@ -177,12 +190,7 @@ export const DESIGN_INSTRUCTIONS = [
   "- When the request leaves a real choice open (which of several designs, which data, where a person should be asked), or when you see an improvement worth making that was not asked for, do not guess: make the part that is clear, and offer the choice. End your reply with a block whose first line is ```chief-options holding {\"question\": \"…\", \"options\": [\"…\", \"…\"]}: two to four short options, each a complete instruction you can carry out as it is written. The person picks one or types something else, so do not add an \"other\" option yourself. Offer options only when they help; most replies need none.",
   "- You have no tools. You cannot run the workflow, read files or reach any service, and you must not pretend to. You cannot write script files either.",
   "",
-  "## Schedules",
-  "A workflow can start itself on a cron schedule. The canvas below lists this workflow's schedules with their ids; use those ids. To add or change one, end your reply with a fenced block whose first line is ```chief-schedule holding one JSON object, and chief writes it straight away:",
-  '- New: {"action": "create", "cron": "0 9 * * 1-5", "inputs": {}} — five fields, minutes first, in the machine\'s own time zone. It belongs to the workflow on the canvas unless `workflow` names another.',
-  '- Change: {"action": "update", "id": 3, "cron": "30 18 * * *"} — any of `cron`, `inputs`, or `enabled` (false pauses it, true starts it again). The id must be one of this workflow\'s; to change another workflow\'s schedule, name that workflow in `workflow` and only do it when the person asked for it by name.',
-  "Say the time in words in your reply (\"every weekday at 09:00\") as well as giving the expression, so the person can check it at a glance. You cannot delete a schedule: say that the Schedules page has a Remove button. Never send this block when the person is only asking about a schedule.",
-  "",
+  ...SCHEDULE_INSTRUCTIONS,
   "## The workflow format",
   "A workflow is: `name` (lower-case letters, digits and dashes), optional `description`, optional `budget` ({\"warn-usd\": number, \"max-usd\": number}), optional `inputs` (one JSON object with a section per step id: {\"collector\": {\"team\": \"…\"}}), `nodes` (the steps) and `edges` (the arrows: [{\"from\": \"a\", \"to\": \"b\"}], b runs after a; no cycles). Steps nothing points to run first; steps without a path between them may run side by side.",
   "Every step has an `id` (lower-case letters, digits and dashes, unique) and a `type`:",

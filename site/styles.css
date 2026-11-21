@@ -98,12 +98,14 @@ img { max-width: 100%; height: auto; display: block; }
 }
 .brand { display: inline-flex; align-items: center; gap: .55rem; font-weight: 800; font-size: 1.15rem; color: var(--ink); text-decoration: none; letter-spacing: -.02em; }
 .brand-mark { width: 30px; height: 27px; }
-.nav-links { display: flex; gap: 1.4rem; margin-left: auto; font-size: .93rem; }
+.nav-links { display: flex; align-items: center; gap: 1.4rem; margin-left: auto; font-size: .93rem; }
 .nav-links a { color: var(--ink-soft); text-decoration: none; }
 .nav-links a:hover { color: var(--ink); }
-.nav-cta { color: var(--surface) !important; background: var(--teal); padding: .35rem .8rem; border-radius: 999px; font-weight: 600; }
+/* The pill is taller than a line of text, so the whole nav is centred on one axis: without this the links
+   sat on the pill's top edge and the row read as misaligned (reported 2026-11-21). */
+.nav-cta { color: var(--surface) !important; background: var(--teal); padding: .35rem .8rem; border-radius: 999px; font-weight: 600; line-height: 1.5; }
 :root[data-theme="dark"] .nav-cta { color: #08211c !important; }
-.theme { margin-left: .4rem; background: none; border: 1px solid var(--line); border-radius: 999px; padding: .4rem; cursor: pointer; color: var(--ink-soft); display: inline-flex; }
+.theme { margin-left: .4rem; background: none; border: 1px solid var(--line); border-radius: 999px; padding: .4rem; cursor: pointer; color: var(--ink-soft); display: inline-flex; align-items: center; }
 .theme svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 @media (max-width: 760px) { .nav-links { display: none; } }
 
@@ -127,7 +129,10 @@ img { max-width: 100%; height: auto; display: block; }
 .btn:hover { transform: translateY(-1px); }
 .btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .btn-primary { background: var(--teal); border-color: transparent; color: #06231f; }
-.btn-primary .chip { background: rgba(255, 255, 255, .25); }
+/* The chip inherits the teal text of `.chip` below, which is mint in the dark theme — mint on a
+   lightened mint button, 1.1:1, invisible (reported 2026-11-21). On the filled button it is dark ink
+   on a translucent plate in both themes. */
+.btn-primary .chip { background: rgba(255, 255, 255, .6); color: #06231f; }
 .btn.small { padding: .45rem .8rem; font-size: .9rem; }
 :root[data-theme="dark"] .btn-primary { color: #06231f; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn-primary { color: #06231f; } }

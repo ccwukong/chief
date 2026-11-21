@@ -9,7 +9,20 @@ and not yet in a version.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The assistant's cards are readable in the dark theme.** Its answer puts a tinted panel under the
+  workflow change (purple) and the schedule (teal), and in the dark theme the purple panel's text was
+  near-black on a near-black card — 1.16:1, invisible — because the palette turned the tints dark at one
+  end but never defined the `950` step the text used. The schedule card had no dark values at all. Both
+  are themed now, and a case fails if any colour the app reaches for is missing from the dark ramp.
+- **The landing page's download button is readable in the dark theme.** "Apple silicon · v0.2.2" was mint
+  on a lightened mint, 1.1:1.
+- **The landing page's nav is on one line.** The links, the Download pill and the theme button now share a
+  vertical centre; the pill is taller than a line of text and the links used to sit on its top edge.
+- **The quarantine step says what the warning is.** It names the dialog — *"chief" cannot be opened
+  because the developer cannot be verified* — and the only button it offers, so someone who has just seen
+  it knows which step in the list they are on.
 
 ## [0.2.2] — 2026-11-20
 

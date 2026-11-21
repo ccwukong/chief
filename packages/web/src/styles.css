@@ -78,6 +78,7 @@
   --color-red-700: #fca5a5;
   --color-red-800: #fecaca;
   --color-red-900: #fee2e2;
+  --color-red-950: #fff1f1;
 
   --color-amber-50: #2a1f0b;
   --color-amber-100: #3a2b0e;
@@ -87,6 +88,7 @@
   --color-amber-700: #fcd34d;
   --color-amber-800: #fde68a;
   --color-amber-900: #fef3c7;
+  --color-amber-950: #fffbeb;
 
   --color-green-50: #0e2417;
   --color-green-100: #123322;
@@ -95,6 +97,7 @@
   --color-green-700: #86efac;
   --color-green-800: #bbf7d0;
   --color-green-900: #dcfce7;
+  --color-green-950: #f0fdf4;
 
   --color-emerald-50: #082a22;
   --color-emerald-100: #0b3a2f;
@@ -103,6 +106,17 @@
   --color-emerald-700: #6ee7b7;
   --color-emerald-800: #a7f3d0;
   --color-emerald-900: #d1fae5;
+  --color-emerald-950: #ecfdf5;
+  /* Teal is chief's own accent, used by the assistant's schedule card. It was missing from this ramp,
+     so `bg-teal-50` stayed a near-white panel in the dark theme while everything around it was dark. */
+  --color-teal-50: #062a26;
+  --color-teal-100: #083a34;
+  --color-teal-200: #0d524a;
+  --color-teal-300: #14756a;
+  --color-teal-700: #5eead4;
+  --color-teal-800: #99f6e4;
+  --color-teal-900: #ccfbf1;
+  --color-teal-950: #f0fdfa;
 
   --color-blue-50: #10203a;
   --color-blue-100: #152b4d;
@@ -111,6 +125,7 @@
   --color-blue-700: #93c5fd;
   --color-blue-800: #bfdbfe;
   --color-blue-900: #dbeafe;
+  --color-blue-950: #eff6ff;
 
   --color-orange-50: #2a1a0b;
   --color-orange-100: #3a240e;
@@ -119,6 +134,7 @@
   --color-orange-700: #fdba74;
   --color-orange-800: #fed7aa;
   --color-orange-900: #ffedd5;
+  --color-orange-950: #fff7ed;
 
   --color-sky-50: #0c2233;
   --color-sky-100: #10293d;
@@ -132,6 +148,7 @@
   --color-purple-700: #c4b5fd;
   --color-purple-800: #ddd6fe;
   --color-purple-900: #ede9fe;
+  --color-purple-950: #f5f3ff;
 }
 
 html, body, #root { height: 100%; }
