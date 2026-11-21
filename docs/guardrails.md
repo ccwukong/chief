@@ -1,0 +1,194 @@
+# Guardrails
+
+The rules this repository enforces, why each exists, and how to fix a failure. Written for anyone —
+in any editor, on any machine, human or agent — and checked by commands that need nothing but Node.
+
+```sh
+npm run guardrails    # the rules ESLint cannot see (this page): no editor needed
+npm run lint          # the rules that need a parser: boundaries, timers, TODO ownership
+npm run check         # both, plus typecheck — what CI runs
+```
+
+CI runs the same three on every push and pull request (`.github/workflows/ci.yml`), so a rule cannot
+be skipped because someone's editor lacks a plugin. Nothing here depends on Cursor, Claude Code, or any
+other agent tool; those tools read `AGENTS.md`, and the enforcement is the same for them as for a
+person in `vim`.
+
+## The idea in one line
+
+**A comment is advice; a rule is a gate.** When a mistake is corrected, the correction goes into a
+rule that fails the build, not into a comment asking the next person to remember. This is the practice
+Lauren Tan describes in *"All Code Is Slop (Except Mine)"* (AI Engineer CODE 2026), where her team moved
+99% of comments into lint rules and turned each agent correction into another rule.
+
+## The rules
+
+### 1. Three parts, one boundary, and everything talks over HTTP
+
+| From | May not import |
+|---|---|
+| `packages/web` (the page: browser and desktop renderer) | `packages/chief` (engine, store), `packages/desktop` (main process), `electron`, Node built-ins |
+| `packages/chief` (the engine, headless) | `packages/web`, `packages/desktop`, `electron` |
+| `packages/desktop` (Electron main process) | `packages/chief`, `packages/web`, `node:sqlite` |
+
+The page talks to the server over HTTP; the desktop wrapper starts the server as a child process and
+talks to the same server over HTTP. Only the server opens the database, so there is one owner of
+`chief.db`.
+
+**Why.** The page runs in a browser and in the Electron renderer. An import from the main process is
+enough to put main-process work on the thread that paints: long tasks, a stuttering interface — the
+contamination described in *"All Code Is Slop (Except Mine)"*. A lint rule holds the line because a
+directory name cannot: the pattern covers relative imports too (`../../desktop/src/main.ts`), which is
+the shape an agent writes and the shape that slipped through the first version of this rule.
+
+**Enforced by** `no-restricted-imports` in `eslint.config.js`, both directions.
+**Fix**: call the HTTP API (`packages/web/src/api.ts`). If something is missing, add it to the API —
+that is the contract between the two halves.
+
+### 2. Timers are a design decision
+
+`setInterval`, zero-delay `setTimeout` and `requestAnimationFrame` are refused in `packages/web/src`
+outside `packages/web/src/polling.ts`.
+
+**Why.** A timer used to paper over a missing signal is invisible. A zero-delay `setTimeout` that
+"releases later, in case it comes back" gets copied, and then a page has a dozen of them and nobody
+knows which are load-bearing. The same pattern went from one call to 183 in six weeks on another team.
+A timer also `races the DOM`: it works on a fast machine and fails on a slow one.
+
+**Enforced by** `local/no-raw-timers` in `eslint.local-rules.js`.
+**Fix**: use what the page actually wants instead —
+
+| You want | Use |
+|---|---|
+| Ask the server again regularly | `usePolling(run, everyMs, deps)` in `src/polling.ts` |
+| Scroll to an element you just rendered | `useReveal()` — call `reveal("testid")` in the handler |
+| Focus a field that just mounted | `ref.current?.focus()` in an effect |
+| "After the render" | an effect |
+| Debounce what a person is typing | a `setTimeout(fn, 300)` with a real delay — allowed |
+
+**Do not delete a timer and the behaviour it provided.** Route it through the sanctioned module. A
+first attempt at this rule dropped the run list's 2-second refresh, and three cases failed: the timer
+had been doing real work that nobody had written down.
+
+### 3. A `TODO` names the task that owns it
+
+A `TODO`, `FIXME` or `HACK` directive must carry a task id: `// TODO(14.1): …`.
+
+**Why.** A promise nobody can find is not tracked. The id makes it show up in
+[docs/dev-plan.md](dev-plan.md), which is where work is decided.
+
+**Enforced by** `local/task-id-in-todos` in `eslint.local-rules.js`.
+**Fix**: add the id, or do the work now.
+
+### 4. Names are lower-case kebab-case
+
+Files and directories: `my-file.ts`, `claude-code.ts`.
+
+**Why.** A name is context. `electron-renderer/` tells an agent which side of a boundary it is on
+before any code is read, and `tick.hot.ts` says "runs every frame, allocate nothing". Upper case or
+camelCase names carry no such signal and hide their own meaning.
+
+**Enforced by** `npm run guardrails` (`naming`).
+
+### 5. Markdown lives in `docs/`
+
+Only `README.md`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `CHANGELOG.md` and anything under
+`docs/`. The third-party notices are not on this list because they are **generated by the build into
+`dist/`**, never kept in the tree (dev plan task 15.18): a 1,200-line file that every dependency bump
+rewrote was a list nobody read and everybody maintained, and the copy that has to exist is the one inside
+the `.dmg`.
+
+**Why.** An agent that answers a question by writing a new `.md` file beside the code is documenting
+its own reasoning, and the next agent treats that file as a source of truth. A specification belongs
+in `docs/`; a rule belongs in a rule.
+
+**Enforced by** `npm run guardrails` (`markdown`).
+
+### 6. Every suppression says why
+
+`// eslint-disable-next-line rule -- the reason` and `// @ts-expect-error — the reason`.
+
+**Why.** A bare suppression is the same escape hatch as a comment: it hides the rule from the next
+reader and from everyone after them.
+
+**Enforced by** `npm run guardrails` (`suppression`).
+
+### 7. Every table and index is `<schema>__<name>`
+
+One database, one schema per feature (`dev plan §4`).
+
+**Why.** SQLite has no named schemas, so the name carries the ownership. `run__messages` tells you it
+belongs to runs; `messages` tells you nothing.
+
+**Enforced by** `npm run guardrails` (`sql-naming`), from migration 003 onwards — the migration that
+established the convention. 001 and 002 are history and are never edited.
+
+### 8. State is in `~/.chief`, never in a checkout
+
+**Why.** A workflow's folder is writable by the steps that run in it, and an MCP client may drop an
+`.mcp.json` there — one was found inside the repository tree, git-ignored but one bad commit away from
+being published. Moving the checkout also required rewriting stored paths; outside the checkout there
+is nothing to rewrite.
+
+**Enforced by** `npm run guardrails` (`state-home`) on `packages/chief/src/paths.ts`, and by case
+E9.32-1.
+
+### 9. No dependency on a runtime the project does not ship
+
+Scripts use `npm run …` and `process.execPath`, never `bun`.
+
+**Why.** The engine moved from Bun to Node (task 11.x). A leftover `bun run build:web` in a setup file
+hung the whole test suite once, and on a machine without Bun it would fail differently.
+
+**Enforced by** `npm run guardrails` (`no-bun`) and case E11.7-1.
+
+### 10. A tooltip is scanned, not read
+
+An entry in `packages/web/src/help.ts` is at most six lines and 420 characters, one sentence per line,
+joined with `"\n"` so the bubble renders them as lines. An entry written as a list carries no
+semicolon-chained sentence; a plain one-line entry is read as one line and is left alone.
+
+**Why.** The building blocks' four tooltips were merged into one 1,249-character paragraph in a 320 px
+bubble, and it was reported for what it was: *"too clunky and poorly arranged, it's impossible to read
+for humans"*. A `?` is a reminder at the point of use; a paragraph there costs the reader more than
+opening the docs. The reader had already asked twice for shorter help text, which is the signal that
+the correction was not a rule yet.
+
+**Enforced by** `npm run guardrails` (`help-short`), cases E14.2-1 and E9.50-1, and
+`whitespace-pre-line` on the bubble in `packages/web/src/ui.tsx`.
+
+## What is deliberately not a rule
+
+- **Banning `useEffect`.** Dozens of uses in the web UI, several legitimate. It needs sanctioned hooks
+  and a refactor first; a blanket ban now would be worked around.
+- **Deleting comments at scale.** Density here is about 10%, and `docs/dev-plan.md` is a
+  specification, not stale notes. Comments that explain *why* a non-obvious thing is done are the
+  cheapest documentation there is; what gets removed is a comment standing in for a rule.
+- **Comment length or style lint.** It creates churn without preventing a mistake.
+
+## Using this outside an agent
+
+- **Any editor**: `npm run check` before committing.
+- **As a pre-commit hook** (opt in, per clone):
+
+  ```sh
+  printf '#!/bin/sh\nnpm run check --silent\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+  ```
+
+- **In CI**: nothing to do, `.github/workflows/ci.yml` already runs it.
+- **For an agent**: `AGENTS.md` is the instruction file (Claude Code reads `CLAUDE.md`, which points
+  there). The rules are the same ones this page describes, and they are enforced rather than requested,
+  so an agent that ignores the file still cannot merge a violation.
+
+## Adding a rule
+
+1. Add the case to [e2e-test-plan.md](e2e-test-plan.md) and a task to
+   [dev-plan.md](dev-plan.md) — the plan-coverage case fails without them.
+2. Prefer ESLint (`eslint.local-rules.js`) for anything needing syntax; `scripts/guardrails.mjs` for
+   anything else.
+3. Make the message say **what to do instead**, not just that something is wrong. A rule that only
+   forbids gets worked around.
+4. Make the case prove the rule fires on the mistake and stays quiet on the legitimate case —
+   E14.1-1 and E14.2-1 are the pattern.
+5. A new package joins the boundary table in rule 1 before it joins the build: the desktop package did,
+   and that is what closed the renderer/main gap for the app.

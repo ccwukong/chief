@@ -1,0 +1,88 @@
+# The download ledger, kept current (dev plan task 15.29).
+#
+# GitHub counts downloads per release asset, and that count belongs to the asset: pruning an old release
+# deletes its count, so a total read live from GitHub goes down when the list is tidied. `downloads.json`
+# at the repository root is the answer — a plain file in git that records the highest count ever seen for
+# each version, so the number only ever grows. This workflow is what writes it.
+#
+# It is deliberately not in `ci.yml`: the number changes on GitHub's clock, not on a commit, so a stale
+# ledger must never fail a build. That is why `scripts/download-tally.mjs --check` exists for a person and
+# a case, but nothing in `npm run check` runs it.
+#
+# Daily is enough: a download counter does not need to be live, and a scheduled run costs nothing visible.
+# `workflow_dispatch` is the one command to run it now — `gh workflow run downloads` — which is what to call
+# before pruning. `release: published` counts a release published by a person; a release published by this
+# repository's own `desktop` workflow does not trigger it (GitHub ignores events raised by its own token),
+# which is one of the reasons the schedule exists rather than relying on the event alone.
+name: downloads
+
+on:
+  schedule:
+    - cron: "17 5 * * *" # 05:17 UTC: after the day's releases, before the working day
+  workflow_dispatch:
+  release:
+    types: [published]
+  # The release the `desktop` workflow publishes cannot trigger this through `release:` — an event raised
+  # by a workflow's own `GITHUB_TOKEN` does not start another workflow (GitHub's loop guard) — so the tally
+  # is also started by `desktop` completing, which is a workflow event and not suppressed. Without this the
+  # numbers for a new version would wait for the next morning's schedule.
+  workflow_run:
+    workflows: [desktop]
+    types: [completed]
+
+permissions:
+  contents: write
+
+# One tally at a time; a scheduled run and a release can land in the same minute.
+concurrency:
+  group: downloads
+  cancel-in-progress: false
+
+jobs:
+  tally:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # A failure here must not fail the repository's history: a tally is bookkeeping, and a red X on a
+      # scheduled run teaches people to ignore red Xs. If GitHub's API is unreachable the ledger simply
+      # keeps the numbers it already has, which is exactly what pruning needs them for.
+      - name: Fetch the releases and merge them into the ledger
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases.json; then
+            echo "::notice title=Tally skipped::GitHub's release API could not be read; the ledger keeps its numbers"
+            exit 0
+          fi
+          node scripts/download-tally.mjs releases.json
+
+      # Only when the number changed: a commit per scheduled run with no change would be noise, and every
+      # one of them would touch `downloads.json` for nothing.
+      #
+      # `[skip ci]` keeps a tally commit from spending CI or a macOS runner; `paths-ignore` in `ci.yml` and
+      # `desktop.yml` is the belt to that braces, because a message convention is not enforceable and a
+      # path is.
+      - name: Commit the ledger when it changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- downloads.json; then
+            echo "::notice title=Ledger unchanged::nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          total="$(node -p 'require("./downloads.json").total')"
+          git add downloads.json
+          git commit -m "downloads: ${total} total [skip ci]"
+          # A refused push is bookkeeping, not a red repository — the same rule as a tally that cannot read
+          # GitHub. `main` is protected ("changes must be made through a pull request"), so the ledger commit
+          # can be refused; say so, and say what it means, instead of failing every release with an X that
+          # teaches people to ignore Xs. Set `GH_TOKEN`'s owner to an account allowed to push, or commit the
+          # tally by hand, to keep the ledger itself moving.
+          if ! git push 2>push.log; then
+            echo "::notice title=Ledger not committed::the tally could not be pushed ($(tail -1 push.log)). downloads.json is unchanged in the repository; the count is still recorded by GitHub on the release assets."
+            exit 0
+          fi

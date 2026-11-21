@@ -1,0 +1,99 @@
+# The gate: nothing merges that does not pass these. They are the rules a reviewer would otherwise
+# have to remember, which is exactly what an agent cannot be relied on to do (dev plan §7, 14.1).
+#
+# What runs where: the fast gate (`check`) runs on every push and pull request because it costs a minute
+# on Linux; the e2e suite runs on a pull request or by hand only, because `main` takes squash and merge
+# and so already contains the content the pull request tested (task 15.52).
+#
+# Two jobs, because chief is a macOS product: the script sandbox has no backend on Linux (dev plan §12
+# B.2), so the suite's script cases cannot pass there, and the desktop cases are macOS only. The first
+# job is the platform-independent gate and runs on Linux because it is a minute; the second is the real
+# suite, on macOS, where a laptop run happens (task 15.19).
+name: ci
+
+on:
+  push:
+    branches: [main]
+    # The download tally's own commit (task 15.29). It changes a counter, not a line of the product, and
+    # it says `[skip ci]` too — a path cannot be forgotten, a commit message can.
+    paths-ignore:
+      - downloads.json
+  pull_request:
+  # A way to run the gate without a commit: `gh workflow run ci`. It exists because a push does not
+  # always produce a run — GitHub dropped the push events for this repository for a while on
+  # 2026-11-20, and a gate that can only be reached by pushing is a gate nobody can reach when that
+  # happens (task 15.30).
+  workflow_dispatch:
+
+jobs:
+  # TypeScript, ESLint (--max-warnings 0: it owns the boundary, timer and TODO rules) and the rules
+  # ESLint cannot see (docs/guardrails.md). `npm run check` is all three. This runs on Linux because
+  # none of it is platform-specific, and it is the fast answer on a push.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+          cache: npm
+
+      - run: npm ci
+
+      # The web UI is built before the check: a few guards read the built tree, and the server embeds it.
+      - run: npm run build:web
+
+      - run: npm run check
+
+  # The e2e suite. macOS, because the script sandbox, the desktop app and several cases that depend on
+  # them are macOS-only; running it on Linux reported 51 failures that were all "no script sandbox".
+  #
+  # **Only on a pull request, or when started by hand.** `main` takes squash and merge (15.50), so the
+  # content a merge puts on `main` is byte-for-byte what the pull request already tested here; running the
+  # suite again on the push spends a macOS runner to re-prove it. And a direct force push to `main` — how
+  # the maintainer's own work lands — is not a moment to start a 12-minute suite behind their back
+  # (asked for 2026-11-21). `gh workflow run ci` still runs it whenever that proof is wanted; the `check`
+  # job above keeps running on every push, so a broken commit on `main` is still caught in a minute.
+  e2e:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+          cache: npm
+
+      - run: npm ci
+
+      # The desktop cases launch the staged Electron app, which needs Electron's own binary; `npm ci`
+      # does not always download it (npm's allowScripts).
+      - name: Electron binary
+        run: |
+          if [ ! -d node_modules/electron/dist ]; then node node_modules/electron/install.js; fi
+
+      # The bundle too, not just the web UI: the suite runs `chief` itself (E11.6-1) and
+      # `npm run install:cli` (E15.37-1), and both need `dist/chief.mjs`. Building only the UI left
+      # E15.37-1 red on every run with "dist/chief.mjs is missing" — an environment gap, not a failure.
+      - run: npm run build
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npx playwright test
+        env:
+          CHIEF_E2E_HEADLESS: "1"
+
+      - name: Keep what failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
