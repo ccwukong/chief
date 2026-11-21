@@ -6,8 +6,8 @@ import { SHOW_BUDGETS } from "../features";
 
 /** One agent CLI as Settings shows it (the shape of `/api/doctor`'s `providers`; the web app may not import the engine). */
 interface ProviderState { name: string; enabled: boolean; chosen: boolean; found: boolean; path: string | null; version: string | null; ok: boolean; note?: string }
-const AGENT_LABEL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", opencode: "OpenCode" };
-const ADAPTERS = ["claude-code", "codex", "cursor", "antigravity", "opencode"];
+const AGENT_LABEL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", opencode: "OpenCode", hermes: "Hermes" };
+const ADAPTERS = ["claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"];
 
 export function Settings() {
   const [f, setF] = useState<Record<string, any> | null>(null);

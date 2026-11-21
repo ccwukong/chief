@@ -29,7 +29,7 @@ export const tokenCount = (n: number | null | undefined) => (n ?? 0).toLocaleStr
 export const pretty = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
 
 /** An adapter's name as a person reads it. One list, so the shell, the designer and Settings agree. */
-export const AGENT_NAME: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", opencode: "OpenCode" };
+export const AGENT_NAME: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", opencode: "OpenCode", hermes: "Hermes" };
 export const agentName = (a: string) => AGENT_NAME[a] ?? a;
 /** A list as a person reads it: "A", "A and B", "A, B and C". */
 export function agentList(names: string[]): string {

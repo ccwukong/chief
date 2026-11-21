@@ -114,7 +114,7 @@ test("E8.2-2 the notify setting turns notifications off", ({ chief }) => {
 test("E8.3-1 README, workflow guide and adapter notes exist and match the product", ({ chief }) => {
   const root = join(__dirnameCompat(), "../..");
   const read = (p: string) => readFileSync(join(root, p), "utf8");
-  const adapters = ["claude-code", "codex", "cursor", "antigravity", "opencode"];
+  const adapters = ["claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"];
   for (const f of ["README.md", "docs/workflow-guide.md", ...adapters.map((a) => `docs/adapters/${a}.md`)]) expect(existsSync(join(root, f)), f).toBe(true);
   // Every adapter chief has is documented in the guide, and the guide names no other.
   expect(chief.run(["doctor", "--json"]).json().adapters.map((a: any) => a.name)).toEqual(adapters);

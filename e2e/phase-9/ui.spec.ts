@@ -667,7 +667,7 @@ test("E9.9-2 a node can use another agent CLI, and its model list follows", asyn
   await tid(page, "node-id").fill("with-cursor");
   await tid(page, "node-prompt").fill("one");
   await expect(tid(page, "node-agent")).toHaveValue("");
-  await expect(tid(page, "node-agent").locator("option")).toHaveText(["workflow’s (claude-code)", "claude-code", "codex", "cursor", "antigravity", "opencode"]);
+  await expect(tid(page, "node-agent").locator("option")).toHaveText(["workflow’s (claude-code)", "claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"]);
   await expect(tid(page, "node-model")).toHaveAttribute("data-count", "3");
   expect(await values()).toEqual(["", "opus", "sonnet", "haiku"]);
   await tid(page, "node-model").selectOption("opus");
@@ -905,7 +905,7 @@ test("E9.11-1 settings that need explaining have a help tooltip with an example"
   // not a copy of the first CLI's (what they all used to say: task 15.12).
   await expect(tid(page, "providers")).toBeVisible();
   await page.waitForTimeout(1200); // the CLIs are looked for (one `--version` each)
-  const BINARY: Record<string, string> = { "claude-code": "claude", codex: "codex", cursor: "cursor-agent", antigravity: "agy", opencode: "opencode" };
+  const BINARY: Record<string, string> = { "claude-code": "claude", codex: "codex", cursor: "cursor-agent", antigravity: "agy", opencode: "opencode", hermes: "hermes" };
   for (const adapter of Object.keys(BINARY)) {
     await tid(page, `provider-${adapter}`).click();
     const id = `setting-path-${adapter}`;
@@ -1081,6 +1081,7 @@ test("E9.15-2 an agent CLI that is not installed is shown as such", async ({ boo
   await expect(tid(page, "palette-mcp-agent-cursor")).toHaveText("Cursor: no servers (not installed)");
   await expect(tid(page, "palette-mcp-agent-antigravity")).toHaveText("Antigravity: no servers (not installed)");
   await expect(tid(page, "palette-mcp-agent-opencode")).toHaveText("OpenCode: no servers (not installed)");
+  await expect(tid(page, "palette-mcp-agent-hermes")).toHaveText("Hermes: no servers (not installed)");
   expect((await srv.api("GET", "/api/mcp")).body.every((s: any) => s.adapter === "claude-code")).toBe(true);
 });
 

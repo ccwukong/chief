@@ -59,7 +59,7 @@ name in the Workflow section of the designer's side panel, then change what diff
 |---|---|
 | `name` | Required. Unique name of the workflow |
 | `description` | Free text |
-| `agent` | Default adapter for agent nodes: `claude-code` (default), `codex`, `cursor`, `antigravity`, `opencode` |
+| `agent` | Default adapter for agent nodes: `claude-code` (default), `codex`, `cursor`, `antigravity`, `opencode`, `hermes` |
 | `budget` | `{ warn-usd, max-usd }`. At `max-usd` the run stops and asks whether to continue |
 | `inputs` | Default values for the run inputs (see below). A run gives its own with `chief run <name> --input key=value` (`a.b=value` for a nested one), `--inputs-json`, or the form that starts it |
 | `nodes` | The nodes, see below |
@@ -194,6 +194,7 @@ in what the CLI itself allows:
 | `cursor` | `cursor-agent` | Told in the prompt only | No auto-approval | `--force` | No |
 | `antigravity` | `agy` | Told in the prompt only | `--mode plan` | `--mode auto` | Tokens only |
 | `opencode` | `opencode` | Other servers switched off for the run | `plan` agent | `--auto` | Yes |
+| `hermes` | `hermes` | Told in the prompt only | Toolsets from its own config (no per-run "none") | Same | Tokens only |
 
 `allowed-tools`, `disallowed-tools` and `permission-mode` apply to Claude Code only. Where the
 restriction is only told in the prompt, an agent could still call another server it is connected

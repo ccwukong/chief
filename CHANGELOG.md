@@ -9,7 +9,15 @@ and not yet in a version.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Hermes Agent is the sixth agent CLI.** `agent: hermes` runs a step with
+  `hermes chat -q "<prompt>" --format stream-json`; sessions are resumed with `--resume`, tokens are
+  recorded, and exit 75 is reported as a provider rate-limit worth retrying. Its MCP servers come
+  from `mcp_servers:` in `~/.hermes/config.yaml`. Written from the vendor's documentation and tested
+  against a fake CLI only, so it is listed with Codex and Cursor as unverified; Hermes also cannot be
+  told per run to use no built-in tools (its toolsets come from its own config), which the README
+  says in "Limits worth knowing".
 
 ## [0.2.4] — 2026-11-21
 

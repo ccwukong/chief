@@ -14,6 +14,7 @@ const ADD_SERVERS: Record<string, string> = {
   cursor: "~/.cursor/mcp.json",
   antigravity: "~/.gemini/config/mcp_config.json",
   opencode: "its own configuration (opencode debug config shows what it resolved)",
+  hermes: "the mcp_servers: key in ~/.hermes/config.yaml (hermes mcp)",
 };
 export const addServersHint = (adapter: string) => ADD_SERVERS[adapter] ?? "the CLI's own configuration";
 

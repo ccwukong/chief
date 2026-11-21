@@ -311,10 +311,10 @@ test("E15.15-1 with no agent CLI the app says so, counts it, and cannot start a 
     await page.goto(`${srv.url}/#/runs`);
     await expect(tid(page, "new-run-start")).toBeDisabled();
     await expect(tid(page, "new-run-no-agent")).toContainText("No agent CLI is installed");
-    // Settings shows all five as not detected, each with its switch off and disabled.
+    // Settings shows all six as not detected, each with its switch off and disabled.
     await page.goto(`${srv.url}/#/settings`);
     await expect(tid(page, "providers")).toBeVisible();
-    for (const a of ["claude-code", "codex", "cursor", "antigravity", "opencode"]) {
+    for (const a of ["claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"]) {
       await expect(tid(page, `provider-status-${a}`)).toHaveText("CLI not detected");
       await expect(tid(page, `provider-switch-${a}`)).toHaveAttribute("aria-checked", "false");
       expect(await tid(page, `provider-switch-${a}`).isDisabled()).toBe(true);

@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, fake, FAKE_ANTIGRAVITY, FAKE_CODEX, FAKE_CURSOR, FAKE_OPENCODE, test, type Chief } from "../helpers";
+import { expect, fake, FAKE_ANTIGRAVITY, FAKE_CODEX, FAKE_CURSOR, FAKE_HERMES, FAKE_OPENCODE, test, type Chief } from "../helpers";
 
 /** Every adapter other than Claude Code, pointed at its fake CLI. */
-const BOTH = { CHIEF_CODEX_BIN: FAKE_CODEX, CHIEF_CURSOR_BIN: FAKE_CURSOR, CHIEF_ANTIGRAVITY_BIN: FAKE_ANTIGRAVITY, CHIEF_OPENCODE_BIN: FAKE_OPENCODE };
+const BOTH = { CHIEF_CODEX_BIN: FAKE_CODEX, CHIEF_CURSOR_BIN: FAKE_CURSOR, CHIEF_ANTIGRAVITY_BIN: FAKE_ANTIGRAVITY, CHIEF_OPENCODE_BIN: FAKE_OPENCODE, CHIEF_HERMES_BIN: FAKE_HERMES };
 const show = (chief: Chief, id = 1) => chief.run(["runs", "show", String(id), "--json"]).json();
 const values = (argv: string[], flag: string) => argv.flatMap((a, i) => (a === flag ? [argv[i + 1]] : []));
 
@@ -40,6 +40,20 @@ function opencodeConfig(chief: Chief) {
     broken: { type: "remote", url: "https://example.invalid/mcp", fake_status: "failed" },
     old: { type: "local", command: ["old"], enabled: false },
   } }));
+}
+function hermesConfig(chief: Chief) {
+  mkdirSync(chief.env.HERMES_HOME, { recursive: true });
+  writeFileSync(join(chief.env.HERMES_HOME, "config.yaml"), `
+mcp_servers:
+  linear:
+    url: https://mcp.linear.app/mcp
+  files:
+    command: npx
+    args: ["files-mcp"]
+  old:
+    command: old
+    enabled: false
+`);
 }
 
 test("E7.1-1 a Codex agent node completes with session, usage and per-run MCP scoping", ({ chief }) => {
@@ -307,7 +321,7 @@ test("E7.5-3 @real OpenCode CLI", ({ chief }) => {
 });
 
 /** The same workflow on every adapter must behave the same. */
-const ADAPTERS = ["claude-code", "codex", "cursor", "antigravity", "opencode"];
+const ADAPTERS = ["claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"];
 const conformance = (adapter: string) => `
 name: conf-${adapter}
 agent: ${adapter}
@@ -383,12 +397,14 @@ test("E7.3-2 doctor and mcp discover report each adapter separately", ({ chief }
   cursorConfig(chief);
   agyConfig(chief);
   opencodeConfig(chief);
+  hermesConfig(chief);
   const doc = chief.run(["doctor", "--json"], { env: BOTH }).json();
-  expect(doc.adapters.map((a: any) => [a.name, a.found, a.version])).toEqual([["claude-code", true, "2.1.311"], ["codex", true, "0.63.0"], ["cursor", true, "2026.10.28-1a2b3c4"], ["antigravity", true, "1.5.11"], ["opencode", true, "1.18.31"]]);
+  expect(doc.adapters.map((a: any) => [a.name, a.found, a.version])).toEqual([["claude-code", true, "2.1.311"], ["codex", true, "0.63.0"], ["cursor", true, "2026.10.28-1a2b3c4"], ["antigravity", true, "1.5.11"], ["opencode", true, "1.18.31"], ["hermes", true, "0.21.3"]]);
   expect(doc.adapters[1].note).toContain("not verified");
+  expect(doc.adapters[5].note).toContain("not verified");
   const none = chief.run(["doctor", "--json"]).json();
   expect(none.ok).toBe(true);
-  expect(none.adapters.map((a: any) => a.found)).toEqual([true, false, false, false, false]);
+  expect(none.adapters.map((a: any) => a.found)).toEqual([true, false, false, false, false, false]);
 
   const list = chief.run(["mcp", "list", "--json"], { env: BOTH }).json();
   expect(list.filter((s: any) => s.adapter === "claude-code")).toHaveLength(5);
@@ -396,6 +412,7 @@ test("E7.3-2 doctor and mcp discover report each adapter separately", ({ chief }
   expect(list.filter((s: any) => s.adapter === "cursor").map((s: any) => s.name)).toEqual(["files", "linear"]);
   expect(list.filter((s: any) => s.adapter === "antigravity").map((s: any) => [s.name, s.config.status])).toEqual([["files", "configured"], ["linear", "configured"], ["old", "disabled"]]);
   expect(list.filter((s: any) => s.adapter === "opencode").map((s: any) => [s.name, s.config.status])).toEqual([["broken", "failed"], ["context7", "connected"], ["github", "connected"], ["old", "disabled"]]);
+  expect(list.filter((s: any) => s.adapter === "hermes").map((s: any) => [s.name, s.config.status])).toEqual([["files", "configured"], ["linear", "configured"], ["old", "disabled"]]);
   // A server name is resolved per adapter: `github` is Codex's own, not Claude Code's connector.
   chief.importWorkflow("name: per\nagent: codex\nnodes:\n  - { id: a, type: agent, mcp: [linear], prompt: x }\n");
   expect(chief.run(["run", "per"], { env: BOTH }).stderr).toContain('codex has no MCP server named "linear" (it has: context7, github, old-thing)');

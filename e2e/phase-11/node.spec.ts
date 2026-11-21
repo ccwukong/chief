@@ -205,7 +205,7 @@ test("E11.3-2 a taken port and a missing browser are explained, and the server k
 test("E11.4-1 doctor reports the Node version and the same adapters", ({ chief }) => {
   const doc = chief.run(["doctor", "--json"]).json();
   expect(doc.node).toMatch(/^v\d+\./);
-  expect(doc.adapters.map((a: any) => a.name)).toEqual(["claude-code", "codex", "cursor", "antigravity", "opencode"]);
+  expect(doc.adapters.map((a: any) => a.name)).toEqual(["claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"]);
   expect(doc.adapters.find((a: any) => a.name === "claude-code")).toMatchObject({ found: true, ok: true });
   expect(doc.db).toMatchObject({ ok: true });
   expect(chief.run(["doctor"]).stdout).toContain("claude-code");

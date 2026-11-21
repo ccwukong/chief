@@ -3,13 +3,14 @@ import { AntigravityAdapter } from "./antigravity.ts";
 import { ClaudeCodeAdapter } from "./claude-code.ts";
 import { CodexAdapter } from "./codex.ts";
 import { CursorAdapter } from "./cursor.ts";
+import { HermesAdapter } from "./hermes.ts";
 import { OpenCodeAdapter } from "./opencode.ts";
 import type { AgentAdapter } from "./types.ts";
 
-export const ADAPTER_NAMES = ["claude-code", "codex", "cursor", "antigravity", "opencode"] as const;
+export const ADAPTER_NAMES = ["claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"] as const;
 
-const ENV_BIN: Record<string, string> = { "claude-code": "CHIEF_CLAUDE_BIN", codex: "CHIEF_CODEX_BIN", cursor: "CHIEF_CURSOR_BIN", antigravity: "CHIEF_ANTIGRAVITY_BIN", opencode: "CHIEF_OPENCODE_BIN" };
-const DEFAULT_BIN: Record<string, string> = { "claude-code": "claude", codex: "codex", cursor: "cursor-agent", antigravity: "agy", opencode: "opencode" };
+const ENV_BIN: Record<string, string> = { "claude-code": "CHIEF_CLAUDE_BIN", codex: "CHIEF_CODEX_BIN", cursor: "CHIEF_CURSOR_BIN", antigravity: "CHIEF_ANTIGRAVITY_BIN", opencode: "CHIEF_OPENCODE_BIN", hermes: "CHIEF_HERMES_BIN" };
+const DEFAULT_BIN: Record<string, string> = { "claude-code": "claude", codex: "codex", cursor: "cursor-agent", antigravity: "agy", opencode: "opencode", hermes: "hermes" };
 
 /** CLI path for an adapter: the `<adapter>.path` setting, then the env override, then PATH. */
 export function adapterBin(store: Store, name: string): string {
@@ -38,6 +39,7 @@ export function getAdapterByBin(name: string, bin: string): AgentAdapter {
     case "cursor": return new CursorAdapter(bin);
     case "antigravity": return new AntigravityAdapter(bin);
     case "opencode": return new OpenCodeAdapter(bin);
+    case "hermes": return new HermesAdapter(bin);
     default: throw new Error(`unknown agent adapter "${name}" (available: ${ADAPTER_NAMES.join(", ")})`);
   }
 }

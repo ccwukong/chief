@@ -22,10 +22,10 @@ The marks above are the vendors' own, shown to say which CLIs chief drives — s
 
 You draw a workflow as a small graph of steps: "read my Slack and list what I need to do", "ask
 me which of these to handle", "do them", "write a report". chief runs the steps with the agent CLI
-you already use (Claude Code, Antigravity or OpenCode; Codex and Cursor experimentally), waits at the points where you want
+you already use (Claude Code, Antigravity or OpenCode; Codex, Cursor and Hermes experimentally), waits at the points where you want
 a say, records everything that was sent and received, tracks what each step cost, and can undo
-what a run changed. A step is whatever agent CLI you point it at: the five adapters today are coding
-agents, and an adapter for a general assistant (Grok Bot, Hermes, …) needs nothing in the engine.
+what a run changed. A step is whatever agent CLI you point it at: the six adapters today are coding
+agents plus Hermes Agent, and another adapter needs nothing in the engine.
 
 - **chief owns** the workflow, the run, a full record of every run, the questions to you (gates),
   token and cost accounting, and pause, resume and revert.
@@ -64,7 +64,8 @@ You need:
 - macOS. Script steps need the macOS sandbox; on Linux and Windows they are disabled.
 - [Node](https://nodejs.org) 22.18 or newer (chief runs TypeScript directly and uses the built-in `node:sqlite`).
 - At least one agent CLI, logged in, with the MCP servers you want to use: Claude Code 2.1.300 or
-  newer (the default), Antigravity (`agy`), OpenCode, Codex or Cursor (`cursor-agent`). Pick the
+  newer (the default), Antigravity (`agy`), OpenCode, Hermes (`hermes`), Codex or Cursor
+  (`cursor-agent`). Pick the
   default in Settings or with `chief settings set default-adapter '"opencode"'`; a workflow or a
   single step can choose another with `agent:`.
 
@@ -333,7 +334,8 @@ Everything chief persists is in `~/.chief/`, outside any code checkout — the s
 
 chief does not configure MCP servers. Add them, remove them and sign in to them in the agent CLI
 itself (Claude Code: `claude mcp` or the connector settings of your claude.ai account; Antigravity:
-`agy mcp`; OpenCode: `opencode mcp` or its `opencode.json`; Codex: its `config.toml`; Cursor:
+`agy mcp`; OpenCode: `opencode mcp` or its `opencode.json`; Hermes: `hermes mcp` or the
+`mcp_servers:` key in `~/.hermes/config.yaml`; Codex: its `config.toml`; Cursor:
 `.cursor/mcp.json`).
 
 - Before every run and every resume, chief asks the CLI which servers it has and whether each is
@@ -373,10 +375,12 @@ The record contains whatever the agents read (for example Slack messages). It st
 ## Safety model
 
 - **Agents can be scoped per step.** By default a step may use all MCP servers the agent CLI is
-  connected to; listing servers in its `mcp:` field hides every other one from it (Cursor and
-  Antigravity can only be told which ones to use, see "Limits worth knowing"). By default it has
-  none of the CLI's built-in tools (no shell, no file writes); Antigravity and OpenCode keep their
-  read tools and run in their planning mode, which changes nothing.
+  connected to; listing servers in its `mcp:` field hides every other one from it (Cursor,
+  Antigravity and Hermes can only be told which ones to use, see "Limits worth knowing"). By default
+  it has none of the CLI's built-in tools (no shell, no file writes); Antigravity and OpenCode keep
+  their read tools and run in their planning mode, which changes nothing, and **Hermes runs with
+  whatever toolsets its own configuration enables** (Hermes has no per-run switch to turn them off;
+  see "Limits worth knowing").
 - **Agents ask before writing** when the prompt tells them to: the agent returns a question, chief
   opens a gate, and your answer resumes the same agent session.
 - **Steps marked `irreversible`** need your confirmation before they run.
@@ -392,16 +396,21 @@ The record contains whatever the agents read (for example Slack messages). It st
 
 ## Limits worth knowing
 
-- **Codex and Cursor adapters are unverified.** They were written from the vendors' documentation
-  and tested against stand-in CLIs only. See [docs/adapters/](docs/adapters/).
-- **Cursor and Antigravity scope MCP servers by instruction only.** Their CLIs cannot hide a
+- **Codex, Cursor and Hermes adapters are unverified.** They were written from the vendors'
+  documentation and tested against stand-in CLIs only. See [docs/adapters/](docs/adapters/).
+- **Cursor, Antigravity and Hermes scope MCP servers by instruction only.** Their CLIs cannot hide a
   configured server for one run, so the step is told which servers it may use.
   Claude Code, Codex and OpenCode hide the other servers.
+- **Hermes cannot be told to use no built-in tools.** Its documented `-t/--toolsets` only enables
+  toolsets, and the enabled set is a property of its own `~/.hermes/config.yaml`; there is no
+  per-run "none" and no read-only mode. A Hermes step therefore runs with whatever toolsets Hermes
+  has enabled, including shell access if it has it. Use another CLI for steps where that matters.
 - **Revert is best effort.** It runs the compensation each step declares. Effects marked
   irreversible, effects of steps without a compensation, and compensations that fail are listed for
   you to handle by hand.
-- **Cost is what the CLI reports.** Claude Code and OpenCode report cost per call. Codex and
-  Antigravity report tokens only, Cursor reports nothing, so budgets do not limit those three.
+- **Cost is what the CLI reports.** Claude Code and OpenCode report cost per call. Codex,
+  Antigravity and Hermes report tokens only, Cursor reports nothing, so budgets do not limit those
+  four.
 - **Schedules need chief running.** The scheduler is inside `chief serve`; the desktop app keeps it
   running after you close the window (until Quit), and closing a terminal that started `chief serve`
   stops it.

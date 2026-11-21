@@ -12,6 +12,7 @@ export const FAKE_CODEX = join(ROOT, "e2e/fixtures/fake-codex.ts");
 export const FAKE_CURSOR = join(ROOT, "e2e/fixtures/fake-cursor.ts");
 export const FAKE_ANTIGRAVITY = join(ROOT, "e2e/fixtures/fake-antigravity.ts");
 export const FAKE_OPENCODE = join(ROOT, "e2e/fixtures/fake-opencode.ts");
+export const FAKE_HERMES = join(ROOT, "e2e/fixtures/fake-hermes.ts");
 export const EXAMPLES = join(ROOT, "examples");
 
 export interface CliResult { code: number; stdout: string; stderr: string; json: <T = any>() => T }
@@ -72,13 +73,15 @@ export const test = base.extend<{ chief: Chief }>({
       ...(process.env as Record<string, string>),
       CHIEF_HOME: join(base, "home"),
       CHIEF_CLAUDE_BIN: FAKE_CLAUDE,
-      // Codex, Cursor, Antigravity and OpenCode are "not installed" unless a test points these at the fakes.
+      // Codex, Cursor, Antigravity, OpenCode and Hermes are "not installed" unless a test points these at the fakes.
       CHIEF_CODEX_BIN: "/nonexistent/codex",
       CHIEF_CURSOR_BIN: "/nonexistent/cursor-agent",
       CHIEF_ANTIGRAVITY_BIN: "/nonexistent/agy",
       CHIEF_OPENCODE_BIN: "/nonexistent/opencode",
+      CHIEF_HERMES_BIN: "/nonexistent/hermes",
       CODEX_HOME: join(base, "codex-home"),
       CURSOR_CONFIG_HOME: join(base, "cursor-home"),
+      HERMES_HOME: join(base, "hermes-home"),
       FAKE_AGY_MCP: join(base, "agy-mcp.json"),
       OPENCODE_CONFIG: join(base, "opencode.json"),
       FAKE_CLAUDE_LOG: log,

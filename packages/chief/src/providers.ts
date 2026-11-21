@@ -26,7 +26,7 @@ const foundLast = (store: Store): string[] => store.getSetting<string[]>("provid
  * The program to look for when nothing else is pinned: the command a person would type. Detection asks
  * for this one, so a stored path that has gone (an upgrade moved the program) is found again on PATH.
  */
-const BARE_BIN: Record<string, string> = { "claude-code": "claude", codex: "codex", cursor: "cursor-agent", antigravity: "agy", opencode: "opencode" };
+const BARE_BIN: Record<string, string> = { "claude-code": "claude", codex: "codex", cursor: "cursor-agent", antigravity: "agy", opencode: "opencode", hermes: "hermes" };
 
 export interface ProviderState {
   name: string;

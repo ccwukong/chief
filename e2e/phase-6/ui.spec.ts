@@ -693,7 +693,7 @@ test("E6.6-2 settings can be changed and persist", async ({ chief, boot, page })
   await expect(tid(page, "setting-notify")).toBeChecked();
 
   // One path field per agent CLI, in the provider cards: each card shows its own (task 15.14).
-  for (const a of ["claude-code", "codex", "cursor", "antigravity", "opencode"]) {
+  for (const a of ["claude-code", "codex", "cursor", "antigravity", "opencode", "hermes"]) {
     await expect(tid(page, `provider-${a}`)).toBeVisible();
     await tid(page, `provider-${a}`).click();
     await expect(tid(page, `setting-${a}-path`)).toBeVisible();

@@ -145,7 +145,7 @@ export function App() {
                 installation problem.{" "}
               </> : <>
                 <b>No agent CLI is set up, so chief cannot run a workflow.</b> A step needs one of the agent CLIs
-                (Claude Code, Codex, Cursor, Antigravity, OpenCode) installed.{" "}
+                (Claude Code, Codex, Cursor, Antigravity, OpenCode, Hermes) installed.{" "}
               </>}
               <a data-testid="no-agent-cli-settings" className="underline font-medium" href="#/settings">
                 Open Settings › Agent CLIs
