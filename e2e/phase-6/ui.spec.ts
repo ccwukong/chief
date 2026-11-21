@@ -123,8 +123,10 @@ test("E6.3-1 the runs page lists runs with status and opens one", async ({ chief
   await expect(tid(page, "run-row-2")).toContainText("gated");
   await expect(tid(page, "run-row-2")).toContainText("waiting gate");
   // The dollar figure is hidden while its usefulness is decided (task 15.24): no Cost column, and no
-  // money in a row. What is still shown is the status, which is what the list is for.
-  await expect(page.getByTestId("runs-table").locator("thead th")).toHaveCount(5);
+  // money in a row. The Tokens column (task 15.33) is new, so the table has six columns with cost
+  // hidden; what the list is for is still the status, and the tokens are labelled by their header.
+  await expect(page.getByTestId("runs-table").locator("thead th")).toHaveCount(6);
+  await expect(page.getByTestId("runs-table").locator("thead")).toContainText("Tokens");
   await expect(page.getByTestId("runs-table")).not.toContainText("Cost");
   await expect(page.getByTestId("runs-table")).not.toContainText("$");
   await expect(tid(page, "gates-badge")).toHaveText("1 gate waiting");
@@ -162,10 +164,10 @@ edges: [first -> second]
 
   await expect(first).toContainText("1000 in · 200 out");
   // No dollars on the step or in the run's totals while cost is hidden (task 15.24); the token counts,
-  // which is what the number was standing in for, are still there.
+  // which is what the number was standing in for, are still there and now say what they are (15.33).
   await expect(first).not.toContainText("$");
   await expect(first).toContainText("prompt ~");
-  await expect(tid(page, "run-totals")).toContainText("1100 in · 220 out");
+  await expect(tid(page, "run-totals")).toHaveText("1,100 tokens in · 220 tokens out");
   await expect(tid(page, "run-totals")).not.toContainText("$");
   await first.click();
   await tid(page, "node-output-json").click();

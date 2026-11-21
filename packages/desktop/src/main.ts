@@ -7,6 +7,7 @@ import { loginEnvironment } from "./login-env.ts";
 import { decideNavigation, decideWindowOpen, readDataUrl } from "./navigation.ts";
 import { Sidecar, SidecarError } from "./sidecar.ts";
 import { statusPage } from "./status-page.ts";
+import { checkForUpdate, downloadDmg, type Release } from "./update.ts";
 /**
  * The main process: a window over a `chief serve` it starts itself (dev plan §3 "Desktop
  * application"). The page is the web UI, loaded over HTTP like in a browser, so the REST API and
@@ -304,8 +305,7 @@ function diagnostics(): string {
   ].join("\n");
 }
 function buildMenu() {
-  const version = app.getVersion();
-  // The native About panel, as every macOS app has it: chief's icon, name and version.
+  const version = app.getVersion();  // The native About panel, as every macOS app has it: chief's icon, name and version.
   app.setAboutPanelOptions({
     applicationName: "chief",
     applicationVersion: version,
@@ -317,6 +317,8 @@ function buildMenu() {
       label: "chief",
       submenu: [
         { role: "about" },
+        { type: "separator" },
+        { label: "Check for Updates…", click: () => void checkForUpdates({ manual: true }) },
         { type: "separator" },
         { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => openInApp("/#/settings") },
         { type: "separator" },
@@ -374,10 +376,68 @@ function buildMenu() {
   ]));
 }
 /**
+ * Ask GitHub for the newest release and offer it. This is the one request chief makes on its own: it
+ * is in the README and on the landing page as such, and `CHIEF_NO_UPDATE_CHECK=1` turns it off.
+ *
+ * There is no silent install (see `update.ts`: Squirrel needs a Developer ID, and chief is signed
+ * ad hoc). It downloads the `.dmg` the release publishes and opens it, so the same drag-to-Applications
+ * window appears as on a first install — the update is one drag, not an invisible swap.
+ */
+let checking = false;
+async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<void> {
+  if (checking) return;
+  if (!opts.manual && process.env.CHIEF_NO_UPDATE_CHECK) return;
+  const current = app.getVersion();
+  checking = true;
+  try {
+    const release = await checkForUpdate(current, { url: process.env.CHIEF_UPDATE_URL || undefined });
+    if (!release) {
+      if (opts.manual) await dialog.showMessageBox({ type: "info", message: `chief ${current} is the newest version.`, detail: "You are up to date.", buttons: ["OK"] });
+      return;
+    }
+    log.note(`chief ${release.version} is available (this is ${current})`);
+    const { response } = await dialog.showMessageBox({
+      type: "info",
+      message: `chief ${release.version} is available.`,
+      detail: `You have ${current}. chief will download the installer and open it: drag chief onto Applications, replacing the old copy. Your workflows, runs and settings stay in ~/.chief and are not touched.`,
+      buttons: ["Download and Open", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response !== 0) return;
+    await offerDownload(release);
+  } catch (e: any) {
+    // A check that cannot reach GitHub is not an error a person needs: the app works offline.
+    log.note(`could not check for updates: ${e?.message ?? e}`);
+    if (opts.manual) await dialog.showMessageBox({ type: "warning", message: "Could not check for updates.", detail: String(e?.message ?? e), buttons: ["OK"] });
+  } finally {
+    checking = false;
+  }
+}
+/** Download to ~/Downloads and open it (which mounts the image and shows the installer window). */
+async function offerDownload(release: Release): Promise<void> {
+  const dir = app.getPath("downloads");
+  try {
+    const file = await downloadDmg(release, dir);
+    log.note(`downloaded ${file.name} to ${dir}`);
+    const err = await shell.openPath(file.path);
+    if (err) throw new Error(err);
+  } catch (e: any) {
+    log.note(`could not download chief ${release.version}: ${e?.message ?? e}`);
+    await dialog.showMessageBox({
+      type: "warning",
+      message: `Could not download chief ${release.version}.`,
+      detail: `${e?.message ?? e}\n\nThe release page opens instead, where the installer can be downloaded by hand.`,
+      buttons: ["Open Release Page", "OK"],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => { if (response === 0) void shell.openExternal(release.page); });
+  }
+}
+/**
  * How many runs are in flight right now (a run being driven, not one waiting at a gate or paused).
  * Read from the server, so it is the engine's own answer; 0 when the server is not up.
- */
-async function runningCount(): Promise<number> {
+ */async function runningCount(): Promise<number> {
   const base = devUrl || origin();
   if (!base) return 0;
   try {
@@ -422,5 +482,7 @@ if (!app.requestSingleInstanceLock()) {
       serverEnv = login.env;
     }
     await boot();
+    // After the server and the window: a check that fails or is slow must never delay chief starting.
+    void checkForUpdates();
   });
 }

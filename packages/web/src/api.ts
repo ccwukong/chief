@@ -24,6 +24,8 @@ export async function getPage<T = any>(path: string, page: number, perPage: numb
 }
 
 export const usd = (n: number | null | undefined) => `$${(n ?? 0).toFixed(4)}`;
+/** A token count as a person reads it: 1164981 is 1,164,981. Uses one locale so the separators do not depend on the browser. */
+export const tokenCount = (n: number | null | undefined) => (n ?? 0).toLocaleString("en-US");
 export const pretty = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
 
 /** An adapter's name as a person reads it. One list, so the shell, the designer and Settings agree. */

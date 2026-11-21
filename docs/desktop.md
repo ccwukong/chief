@@ -21,6 +21,25 @@ imports neither the engine nor the web UI: it starts the server as a program and
 | `scripts/render-dmg-background.ts` | Renders `assets/dmg-background.png` from `assets/dmg-background.html` (run again only when the words change) |
 | `assets/dmg-background.html` | The installer window's background, at the window's own size (600×400): *Drag chief into Applications* above the two icons, an arrow between them |
 | `assets/dmg-background.png` | That page, committed. **600×400 pixels at 72 dpi** — Finder draws a background at its natural point size, which is its pixel size at 72 dpi, so any other size is drawn cropped or padded. The build only copies it, because `sips` cannot draw text and a build machine has no browser |
+| `src/update.ts` | Finding a newer release and fetching its installer: the version comparison, which release counts, the download. No Electron imports, so the cases call it directly |
+
+## Updates
+
+The app asks GitHub for its newest release once at launch, and offers it when the version is higher
+(`Check for Updates…` in the chief menu asks again on demand; `CHIEF_NO_UPDATE_CHECK=1` stops the
+launch check, and `CHIEF_UPDATE_URL` points the check at another release list). **Download and Open**
+saves the `.dmg` to `~/Downloads` and opens it, so the installer window appears and the update is the
+same drag onto Applications as a first install. Nothing in `~/.chief` is touched.
+
+**It does not install itself, on purpose.** Electron's `autoUpdater` is Squirrel.Mac on macOS, and
+Squirrel checks the running app's signature against a Developer ID before applying an update; chief is
+signed ad hoc (`codesign --force --deep --sign -`, no identity), so Squirrel would refuse. A silent
+updater therefore needs an Apple Developer ID certificate and notarization first — an unsigned app that
+replaced itself behind the signature check would not be an updater, it would be a hole. Until then the
+check offers the installer, which is honest about what the app can do.
+
+This one request per launch is the only traffic chief makes that is not the agent CLI's own. The
+landing page and the README say so.
 
 ## Build
 

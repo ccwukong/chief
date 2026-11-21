@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { agentList, api, get, getPage, usd } from "../api";
+import { agentList, api, get, getPage, tokenCount, usd } from "../api";
 import { SHOW_COST } from "../features";
 import { AsyncButton, ConfirmDeleteRuns, ErrorBox, FINISHED, go, Pager, readDraft, Status, useDraft, useWindowWidth } from "../ui";
 import { blankInputs, RunInputsEditor, type InputRef } from "../run-inputs";
@@ -22,7 +22,7 @@ export function Runs({ openId = null }: { openId?: number | null }) {
   const [workflow, setWorkflow] = useDraft("new-run:workflow", "");
   const [inputs, setInputs, clearInputs] = useDraft("new-run:inputs", "");
   const [only, setOnly] = useDraft("runs:filter", "");
-  const [perPage, setPerPage] = useDraft("runs:per-page", 25);
+  const [perPage, setPerPage] = useDraft("runs:per-page", 10);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [confirming, setConfirming] = useState(false);
@@ -180,7 +180,7 @@ export function Runs({ openId = null }: { openId?: number | null }) {
           <tr>
             <th className="w-10 px-3 py-2"><input type="checkbox" data-testid="runs-select-all" aria-label="Select every finished run on this page" checked={allTicked} disabled={!deletable.length}
               onChange={(e) => setSelected(e.target.checked ? new Set(deletable.map((r) => r.id)) : new Set())} /></th>
-            <th className="px-3 py-2">Run</th><th className="px-3 py-2">Workflow</th><th className="px-3 py-2">Status</th>{SHOW_COST && <th className="px-3 py-2">Cost</th>}<th className="px-3 py-2">Created</th>
+            <th className="px-3 py-2">Run</th><th className="px-3 py-2">Workflow</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Tokens</th>{SHOW_COST && <th className="px-3 py-2">Cost</th>}<th className="px-3 py-2">Created</th>
           </tr>
         </thead>
         <tbody>
@@ -196,16 +196,20 @@ export function Runs({ openId = null }: { openId?: number | null }) {
                 <td className="px-3 py-2 font-medium">#{r.id}</td>
                 <td className="px-3 py-2">{r.workflow_name}</td>
                 <td className="px-3 py-2"><Status value={r.status} /></td>
+                {/* "Tokens" is the label: the numbers are input and output tokens, in the run page's compact form. */}
+                <td className="mono whitespace-nowrap px-3 py-2 text-slate-600" data-testid={`run-tokens-${r.id}`} title="Input and output tokens">
+                  {tokenCount(r.tokens_in)} in · {tokenCount(r.tokens_out)} out
+                </td>
                 {SHOW_COST && <td className="px-3 py-2 mono" data-testid={`run-cost-${r.id}`}>{usd(r.cost_usd)}</td>}
                 <td className="px-3 py-2 text-slate-600">{new Date(r.created_at).toLocaleString()}</td>
               </tr>
             );
           })}
-          {runs?.length === 0 && <tr><td colSpan={SHOW_COST ? 6 : 5} className="px-3 py-6 text-center text-slate-500" data-testid="runs-empty">No runs yet.</td></tr>}
+          {runs?.length === 0 && <tr><td colSpan={SHOW_COST ? 7 : 6} className="px-3 py-6 text-center text-slate-500" data-testid="runs-empty">No runs yet.</td></tr>}
         </tbody>
       </table>
       </div>
-      <Pager page={page} perPage={perPage} total={total} onPage={(p) => { setPage(p); setSelected(new Set()); }} onPerPage={(n) => { setPerPage(n); setPage(1); setSelected(new Set()); }} testid="runs-pager" />
+      <Pager page={page} perPage={perPage} total={total} sizes={[10, 25, 50, 100]} onPage={(p) => { setPage(p); setSelected(new Set()); }} onPerPage={(n) => { setPerPage(n); setPage(1); setSelected(new Set()); }} testid="runs-pager" />
       {/* The opened run: a panel that slides in over the right part of the page, the full height of the window.
           There is no backdrop: the rest of the page stays as it is and in use, as in a log viewer. */}
       {shownId != null && (

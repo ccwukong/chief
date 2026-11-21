@@ -1541,44 +1541,49 @@ test("E9.26-2 the run list is paged", async ({ chief, boot, page }) => {
   await page.goto(srv.url + "/#/runs");
   const rows = page.locator('[data-testid^="run-row-"]');
 
-  await expect(tid(page, "runs-pager-range")).toHaveText("1–25 of 30");
-  await expect(tid(page, "runs-pager-page")).toHaveText("Page 1 of 2");
-  await expect(rows).toHaveCount(25);
+  await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 30");
+  await expect(tid(page, "runs-pager-page")).toHaveText("Page 1 of 3");
+  await expect(rows).toHaveCount(10);
   await expect(tid(page, "run-row-30")).toBeVisible();
   await expect(tid(page, "runs-pager-prev")).toBeDisabled();
 
   await tid(page, "runs-pager-next").click();
-  await expect(tid(page, "runs-pager-range")).toHaveText("26–30 of 30");
-  await expect(rows).toHaveCount(5);
+  await expect(tid(page, "runs-pager-range")).toHaveText("11–20 of 30");
+  await expect(tid(page, "runs-pager-page")).toHaveText("Page 2 of 3");
+  await expect(rows).toHaveCount(10);
+  await tid(page, "runs-pager-next").click();
+  await expect(tid(page, "runs-pager-range")).toHaveText("21–30 of 30");
+  await expect(rows).toHaveCount(10);
   await expect(tid(page, "run-row-1")).toBeVisible();
   await expect(tid(page, "runs-pager-next")).toBeDisabled();
   await tid(page, "runs-pager-prev").click();
-  await expect(tid(page, "runs-pager-range")).toHaveText("1–25 of 30");
+  await expect(tid(page, "runs-pager-range")).toHaveText("11–20 of 30");
 
   await tid(page, "runs-pager-size").selectOption("50");
   await expect(tid(page, "runs-pager-range")).toHaveText("1–30 of 30");
   await expect(rows).toHaveCount(30);
   await expect(tid(page, "runs-pager-page")).toHaveText("Page 1 of 1");
-  await tid(page, "runs-pager-size").selectOption("25");
+  await tid(page, "runs-pager-size").selectOption("10");
 
   // The filter starts again at page 1.
   await tid(page, "runs-pager-next").click();
-  await expect(tid(page, "runs-pager-range")).toHaveText("26–30 of 30");
+  await expect(tid(page, "runs-pager-range")).toHaveText("11–20 of 30");
   await tid(page, "runs-filter").selectOption("other");
   await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 10");
   await expect(rows).toHaveCount(10);
   await tid(page, "runs-filter").selectOption("");
-  await expect(tid(page, "runs-pager-range")).toHaveText("1–25 of 30");
+  await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 30");
 
   // Emptying the last page moves back one page.
   await tid(page, "runs-pager-next").click();
-  await expect(tid(page, "runs-pager-range")).toHaveText("26–30 of 30");
+  await tid(page, "runs-pager-next").click();
+  await expect(tid(page, "runs-pager-range")).toHaveText("21–30 of 30");
   await tid(page, "runs-select-all").check();
   await tid(page, "runs-delete").click();
   await tid(page, "confirm-delete-yes").click();
-  await expect(tid(page, "runs-pager-range")).toHaveText("1–25 of 25");
-  await expect(tid(page, "runs-pager-page")).toHaveText("Page 1 of 1");
-  await expect(rows).toHaveCount(25);
+  await expect(tid(page, "runs-pager-range")).toHaveText("11–20 of 20");
+  await expect(tid(page, "runs-pager-page")).toHaveText("Page 2 of 2");
+  await expect(rows).toHaveCount(10);
 });
 
 test("E9.27-1 the settings page uses the full width", async ({ boot, page }) => {
@@ -2838,7 +2843,7 @@ test("E9.60-1 a run opens in a panel over the run list, with its own address, ke
   // Another row, the arrow keys and the buttons change the run without leaving the list.
   // The list keeps its layout under the panel (all its columns, the same width). Nothing is dimmed: there is no backdrop,
   // the panel is as high as the window, and a row left of the panel opens that run.
-  await expect(tid(page, "runs-table").locator("thead th")).toHaveCount(5);
+  await expect(tid(page, "runs-table").locator("thead th")).toHaveCount(6);
   expect(Math.round((await tid(page, "runs-table").boundingBox())!.width)).toBe(tableWidth);
   await expect(tid(page, "run-panel-backdrop")).toHaveCount(0);
   expect((await panel.boundingBox())!.y).toBe(0);

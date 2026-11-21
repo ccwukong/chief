@@ -1,4 +1,4 @@
-import { expect, FAKE_ANTIGRAVITY, test } from "../helpers";
+import { expect, FAKE_ANTIGRAVITY, fake, test } from "../helpers";
 import type { Page } from "@playwright/test";
 
 /**
@@ -386,6 +386,90 @@ test("E15.15-2 with every agent CLI switched off the warning names them and says
     await page.reload();
     await expect(tid(page, "no-agent-cli")).toHaveCount(0);
     await expect(tid(page, "new-run-start")).toBeEnabled();
+  } finally {
+    await srv.stop();
+  }
+});
+
+/**
+ * Task 15.33: the token numbers were on the run page and the run list with no word saying what they
+ * are. They now read as tokens, the list has a Tokens column, and the run list pages 10 at a time.
+ */
+const SPENDY_WF = `name: spendy\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'A ${fake({ tokens: { in: 1164981, out: 54439 } })}' }\n`;
+
+test("E15.33-1 the run page says the totals are tokens, on one line at 375 px", async ({ chief, page }) => {
+  expect(chief.importWorkflow(SPENDY_WF).code).toBe(0);
+  const ran = chief.run(["run", "spendy"]);
+  expect(ran.code, ran.stdout + ran.stderr).toBe(0);
+  const srv = await chief.serve();
+  try {
+    await page.goto(`${srv.url}/#/runs`);
+    await tid(page, "run-row-1").click();
+    // A person can tell these are token counts, and the thousands are separated.
+    await expect(tid(page, "run-totals")).toHaveText("1,164,981 tokens in · 54,439 tokens out");
+    // One line, and the header does not push the run page sideways on a phone.
+    await page.setViewportSize({ width: 375, height: 800 });
+    await expect(tid(page, "run-status")).toHaveText("completed");
+    expect((await tid(page, "run-totals").boundingBox())!.height).toBeLessThan(30);
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector('[data-testid="page-runs"]') as HTMLElement;
+      return { doc: document.documentElement.scrollWidth, main: main.scrollWidth - main.clientWidth };
+    });
+    expect(overflow.doc).toBeLessThanOrEqual(375);
+    expect(overflow.main).toBeLessThanOrEqual(0);
+  } finally {
+    await srv.stop();
+  }
+});
+
+test("E15.33-2 the run list shows each run's input and output tokens, labelled", async ({ chief, page }) => {
+  expect(chief.importWorkflow(SPENDY_WF).code).toBe(0);
+  expect(chief.importWorkflow("name: gated\nnodes:\n  - { id: g, type: gate, kind: approve, value: ship it }\n").code).toBe(0);
+  expect(chief.run(["run", "spendy"]).code).toBe(0);
+  expect(chief.run(["run", "gated"]).code).toBe(0);
+  const srv = await chief.serve();
+  try {
+    await page.goto(`${srv.url}/#/runs`);
+    // The column header is the label; each row carries the same compact form as the run page.
+    await expect(tid(page, "runs-table").locator("thead")).toContainText("Tokens");
+    await expect(tid(page, "run-tokens-1")).toHaveText("1,164,981 in · 54,439 out");
+    await expect(tid(page, "run-tokens-2")).toHaveText("0 in · 0 out");
+    // Adding the column did not bring the hidden cost figures back.
+    await expect(tid(page, "runs-table")).not.toContainText("Cost");
+    await expect(tid(page, "runs-table")).not.toContainText("$");
+    // The table scrolls in its own box: the page does not scroll sideways at 375 px.
+    await page.setViewportSize({ width: 375, height: 800 });
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector('[data-testid="page-runs"]') as HTMLElement;
+      return { doc: document.documentElement.scrollWidth, main: main.scrollWidth - main.clientWidth };
+    });
+    expect(overflow.doc).toBeLessThanOrEqual(375);
+    expect(overflow.main).toBeLessThanOrEqual(0);
+  } finally {
+    await srv.stop();
+  }
+});
+
+test("E15.33-3 the run list pages 10 runs at a time by default", async ({ chief, page }) => {
+  chief.importWorkflow("name: many\nnodes:\n  - { id: g, type: gate, kind: approve, value: ok }\n");
+  const srv = await chief.serve();
+  try {
+    for (let i = 0; i < 12; i++) expect((await srv.api("POST", "/api/runs", { workflow: "many" })).status).toBe(201);
+    await page.goto(`${srv.url}/#/runs`);
+    const rows = page.locator('[data-testid^="run-row-"]');
+    await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 12");
+    await expect(tid(page, "runs-pager-page")).toHaveText("Page 1 of 2");
+    await expect(rows).toHaveCount(10);
+    // 10 is the default and a choice; the other sizes are still offered.
+    await expect(tid(page, "runs-pager-size")).toHaveValue("10");
+    await expect(tid(page, "runs-pager-size").locator("option")).toHaveText(["10", "25", "50", "100"]);
+    await tid(page, "runs-pager-next").click();
+    await expect(tid(page, "runs-pager-range")).toHaveText("11–12 of 12");
+    await expect(rows).toHaveCount(2);
+    // Choosing a bigger page is still possible, and it starts again at page 1.
+    await tid(page, "runs-pager-size").selectOption("25");
+    await expect(tid(page, "runs-pager-range")).toHaveText("1–12 of 12");
+    await expect(tid(page, "runs-pager-page")).toHaveText("Page 1 of 1");
   } finally {
     await srv.stop();
   }

@@ -123,6 +123,13 @@ and open the app again. An app you build yourself (below) does not carry the fla
 - **The web version is unchanged.** `chief serve` and the browser work exactly as before. A run belongs
   to the server, not to the tab: closing the tab never stops one, and while `chief serve` runs the
   server notifies you when a gate is waiting.
+- **It tells you when there is a newer version.** On launch the app asks GitHub for the newest release
+  — the one request it makes on its own — and offers it: **Download and Open** fetches the `.dmg` into
+  Downloads and opens the installer, so updating is the same drag onto Applications as the first
+  install. There is no silent self-replacement: macOS only lets a signed, notarized app update itself,
+  and chief is neither. **Check for Updates…** in the chief menu asks again at any time, and
+  `CHIEF_NO_UPDATE_CHECK=1` stops the launch check. Your workflows, runs and settings are in
+  `~/.chief` and are untouched by an update.
 
 To build the app and the `.dmg` yourself:
 

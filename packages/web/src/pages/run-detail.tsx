@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, get, pretty, usd } from "../api";
+import { api, get, pretty, tokenCount, usd } from "../api";
 import { AsyncButton, ConfirmDeleteRuns, ErrorBox, go, readDraft, removeDraft, Status, writeDraft } from "../ui";
 import { SHOW_BUDGETS, SHOW_COST } from "../features";
 import { GateCard } from "./gates";
@@ -273,8 +273,8 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
       <div className="mb-4 mt-2 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold" data-testid="run-title">Run #{run.id} · {run.workflow_name} v{run.workflow_version}</h1>
         <Status value={s} testid="run-status" />
-        <span className="mono text-sm text-slate-600" data-testid="run-totals">
-          {run.tokens_in} in · {run.tokens_out} out{SHOW_COST ? ` · ${usd(run.cost_usd)}` : ""}{SHOW_BUDGETS && d.budget?.["max-usd"] ? ` of ${usd(d.budget["max-usd"])}` : ""}
+        <span className="mono whitespace-nowrap text-sm text-slate-600" data-testid="run-totals">
+          {tokenCount(run.tokens_in)} tokens in · {tokenCount(run.tokens_out)} tokens out{SHOW_COST ? ` · ${usd(run.cost_usd)}` : ""}{SHOW_BUDGETS && d.budget?.["max-usd"] ? ` of ${usd(d.budget["max-usd"])}` : ""}
         </span>
         <div className="flex flex-wrap gap-2 sm:ml-auto">
           <AsyncButton data-testid="btn-pause" className="btn" disabled={!["pending", "running", "waiting_gate", "interrupted"].includes(s)} onClick={() => act("pause")}>Pause</AsyncButton>

@@ -9,6 +9,22 @@ and not yet in a version.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.3] — 2026-11-21
+
+### Added
+
+- **chief tells you when there is a newer version.** On launch it asks GitHub for the newest release
+  and, when yours is older, offers **Download and Open**: the installer lands in Downloads and opens, so
+  updating is the same drag onto Applications as the first install. **Check for Updates…** in the chief
+  menu asks again whenever you want, and `CHIEF_NO_UPDATE_CHECK=1` stops the launch check.
+
+  It does not replace itself silently. macOS only lets an app update itself when it is signed with a
+  Developer ID and notarized, and chief is neither — so it fetches the installer rather than pretending
+  to have installed it. That is also why the landing page no longer says there are no update pings: it
+  says what the one request is and how to switch it off.
+
 ### Fixed
 
 - **The assistant's cards are readable in the dark theme.** Its answer puts a tinted panel under the

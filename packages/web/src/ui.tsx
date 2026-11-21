@@ -155,7 +155,7 @@ export const PAGE_SIZES = [25, 50, 100];
  * Paging for a list page: the range shown and the total, the page size, previous and next.
  * Every list page uses it, so that no list grows without end.
  */
-export function Pager({ page, perPage, total, onPage, onPerPage, testid = "pager" }: { page: number; perPage: number; total: number; onPage: (p: number) => void; onPerPage: (n: number) => void; testid?: string }) {
+export function Pager({ page, perPage, total, onPage, onPerPage, sizes = PAGE_SIZES, testid = "pager" }: { page: number; perPage: number; total: number; onPage: (p: number) => void; onPerPage: (n: number) => void; sizes?: number[]; testid?: string }) {
   const pages = Math.max(1, Math.ceil(total / perPage));
   const from = total ? (page - 1) * perPage + 1 : 0, to = Math.min(page * perPage, total);
   return (
@@ -163,7 +163,7 @@ export function Pager({ page, perPage, total, onPage, onPerPage, testid = "pager
       <span data-testid={`${testid}-range`}>{total ? `${from}–${to} of ${total}` : "None"}</span>
       <label className="flex items-center gap-2">Per page
         <select data-testid={`${testid}-size`} className="input w-20" value={perPage} onChange={(e) => onPerPage(Number(e.target.value))}>
-          {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          {sizes.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       </label>
       <div className="ml-auto flex items-center gap-2">

@@ -36,10 +36,19 @@ test("E15.23-1 Cancel releases its button at once, even when the record takes se
 
     const t0 = Date.now();
     await tid(page, "btn-cancel").click();
-    // The server has the request almost at once; the button must not be the thing that is waiting.
-    await expect.poll(async () => (await srv.api("GET", `/api/runs/${id}`)).body.run.requested_action, { timeout: 5000 }).toBe("cancel");
+    // The claim: the button stops being busy without waiting for the 5 s refetch, and it does so by itself.
     await expect.poll(async () => tid(page, "btn-cancel").evaluate((el) => el.getAttribute("aria-busy") === "true"), { timeout: 4000 }).toBe(false);
     expect(Date.now() - t0, "the button was released without the 5 s refetch").toBeLessThan(5000);
+
+    // And the click did reach the server. Either shape of "cancelled" counts, because chief has two, and
+    // which one is used depends on whether the run is being driven by a live process at that instant:
+    // `requested_action: "cancel"` (recorded, applied by the driver) or `status: "cancelled"` (applied at
+    // once, which sets `requested_action` back to null). Asserting only the first made this case fail on a
+    // loaded runner with `Received: null` (2026-11-21) although the run was cancelled — the immediate path
+    // had been taken. The wait is generous because it is a gate, not the claim above: what is measured is
+    // the button, and that was already checked.
+    const accepted = async () => (await srv.api("GET", `/api/runs/${id}`)).body.run;
+    await expect.poll(async () => { const r = await accepted(); return r.status === "cancelled" || r.requested_action === "cancel"; }, { timeout: 20_000 }).toBe(true);
 
     // And the page gets to `cancelled` on its own: the slow refetch lands, or the safety-net poll asks.
     await expect(tid(page, "run-status")).toHaveText("cancelled", { timeout: 30_000 });
