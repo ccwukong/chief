@@ -223,14 +223,42 @@ export async function listModels(store: Store, adapter: string, refresh = false)
   return { adapter, ...r };
 }
 
-export function addSchedule(store: Store, workflowName: string, cron: string, inputs: Record<string, unknown> = {}) {
+/**
+ * Check what a schedule would run on, without writing it: the workflow exists, the expression parses,
+ * and every input its steps need has a value (from the schedule, the workflow's own defaults, or a run
+ * would be refused later with nobody there to read it). Shared by the form, the assistant and `setSchedule`,
+ * so every way a schedule is written is checked the same way.
+ */
+export function checkSchedule(store: Store, workflowName: string, cron: string, inputs: Record<string, unknown> = {}) {
   const wf = store.getWorkflow(workflowName);
   if (!wf) throw new EngineError(`workflow "${workflowName}" not found`);
   try { parseCron(cron); } catch (e: any) { throw new EngineError(`invalid cron expression: ${e.message}`); }
   // A schedule whose runs would be refused for a missing input is refused now, while someone is there to read it.
-  const missing = missingInputs(wf.definition, mergeInputs(wf.definition.inputs, inputs));
-  if (missing.length) throw new EngineError(missingInputsMessage(`schedule "${wf.name}"`, missing, mergeInputs(wf.definition.inputs, inputs)));
-  return store.addSchedule(wf.id, cron.trim().split(/\s+/).join(" "), inputs);
+  const merged = mergeInputs(wf.definition.inputs, inputs);
+  const missing = missingInputs(wf.definition, merged);
+  if (missing.length) throw new EngineError(missingInputsMessage(`schedule "${wf.name}"`, missing, merged));
+  return { wf, cron: cron.trim().split(/\s+/).join(" ") };
+}
+
+export function addSchedule(store: Store, workflowName: string, cron: string, inputs: Record<string, unknown> = {}) {
+  const checked = checkSchedule(store, workflowName, cron, inputs);
+  return store.addSchedule(checked.wf.id, checked.cron, inputs);
+}
+
+/**
+ * Change an existing schedule: its expression, its inputs, or whether it fires. Checked like a new one,
+ * so an edit cannot put a workflow somewhere it would be refused. Only the fields given change.
+ */
+export function setSchedule(store: Store, scheduleId: number, patch: { cron?: string; inputs?: Record<string, unknown>; enabled?: boolean }) {
+  const row = store.schedule(scheduleId);
+  if (!row) throw new EngineError(`schedule ${scheduleId} not found`);
+  const out: { cron?: string; inputs?: Record<string, unknown>; enabled?: boolean } = { ...patch };
+  if (patch.cron !== undefined || patch.inputs !== undefined) {
+    const checked = checkSchedule(store, row.workflow_name, patch.cron ?? row.cron, patch.inputs ?? row.inputs ?? {});
+    if (patch.cron !== undefined) out.cron = checked.cron;
+  }
+  store.updateSchedule(scheduleId, out);
+  return store.schedule(scheduleId)!;
 }
 
 /** Run detail as shown by `chief runs show` and the web UI. */

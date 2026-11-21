@@ -7,7 +7,9 @@ import { ModelSelect } from "./designer/panel";
 import { designerBridge } from "./designer/bridge";
 
 interface Change { workflow: string; before: any; after: any; summary: string[] }
-interface Turn { id: number; ts: string; role: "user" | "assistant"; text: string; meta?: { adapter: string; model: string | null; cost_usd: number; resumed: boolean; run_id: number | null; error?: string | null; workflow?: string | null; change?: Change | null; change_error?: string | null; options?: { question: string; options: string[] } | null } }
+/** A schedule the assistant wrote, as the answer recorded it (task 15.33). */
+interface Schedule { action: "create" | "update"; workflow: string; id: number | null; cron?: string; inputs?: Record<string, unknown>; enabled?: boolean; description: string }
+interface Turn { id: number; ts: string; role: "user" | "assistant"; text: string; meta?: { adapter: string; model: string | null; cost_usd: number; resumed: boolean; run_id: number | null; error?: string | null; workflow?: string | null; change?: Change | null; change_error?: string | null; schedule?: Schedule | null; schedule_error?: string | null; options?: { question: string; options: string[] } | null } }
 
 const sameCanvas = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -93,7 +95,7 @@ export function Assistant({ runId, designing = null }: { runId: number | null; d
 
   const turns = info?.conversation ?? [];
   const suggestions = inDesigner
-    ? designing ? ["Explain this workflow step by step", "Design the data format between the steps: what each step returns and what the next ones read", "What could go wrong in this workflow, and how would you fix it?", "Add a step where I approve the result before the last step"] : ["What can a workflow do? Show me a small example on the canvas"]
+    ? designing ? ["Explain this workflow step by step", "Design the data format between the steps: what each step returns and what the next ones read", "What could go wrong in this workflow, and how would you fix it?", "Run this workflow every weekday at 9am", "Add a step where I approve the result before the last step"] : ["What can a workflow do? Show me a small example on the canvas"]
     : runId != null
     ? ["What went wrong, and what should I do next?", `Summarise run #${runId} in plain words`, "What did each step produce?"]
     : ["Which runs failed, and why?", "What is waiting for me?", "What do my workflows do?"];
@@ -129,7 +131,7 @@ export function Assistant({ runId, designing = null }: { runId: number | null; d
             {turns.length === 0 && !pending && (
               <div className="text-sm text-slate-600" data-testid="assistant-empty">
                 {inDesigner
-                  ? <p>Tell me what the workflow should do, or what to change: I add, remove and connect steps and write their prompts, directly on the canvas. Every change I make can be undone here. I run nothing and choose no models.</p>
+                  ? <p>Tell me what the workflow should do, or what to change: I add, remove and connect steps and write their prompts, directly on the canvas. I can also add or change a schedule for it: "every weekday at 9am". Every change I make can be undone here. I run nothing and choose no models.</p>
                   : <p>Ask about {runId != null ? `run #${runId}` : "your workflows, runs and gates"}. I answer from what chief has recorded; I have no tools and change nothing.</p>}
               </div>
             )}
@@ -156,6 +158,17 @@ export function Assistant({ runId, designing = null }: { runId: number | null; d
                 )}
                 {t.meta?.change_error && (
                   <div data-testid="assistant-change-error" className="mt-2 whitespace-pre-wrap rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950"><b>The canvas was not changed.</b> chief did not accept the workflow I wrote:{"\n"}{t.meta.change_error}</div>
+                )}
+                {t.meta?.schedule && (
+                  <div data-testid="assistant-schedule" data-action={t.meta.schedule.action} className="mt-2 rounded border border-teal-200 bg-teal-50 px-2 py-1.5 text-xs text-teal-950">
+                    <div className="font-semibold">{t.meta.schedule.action === "create" ? `Scheduled ${t.meta.schedule.workflow}` : `Changed schedule #${t.meta.schedule.id} of ${t.meta.schedule.workflow}`}</div>
+                    <div className="mt-0.5">{t.meta.schedule.description}</div>
+                    {/* The list is a page of its own; this says where it went rather than making a second list here. */}
+                    <div className="mt-0.5 text-teal-800">It is on the <a href="#/schedules" className="underline">Schedules</a> page.</div>
+                  </div>
+                )}
+                {t.meta?.schedule_error && (
+                  <div data-testid="assistant-schedule-error" className="mt-2 whitespace-pre-wrap rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950"><b>No schedule was written.</b> chief did not accept what I asked for:{"\n"}{t.meta.schedule_error}</div>
                 )}
                 <div className="mt-1 text-2xs text-slate-500" data-testid="assistant-turn-meta">{t.meta?.adapter}{t.meta?.model ? ` · ${t.meta.model}` : ""}{SHOW_COST ? ` · ${usd(t.meta?.cost_usd)}` : ""}{t.meta?.run_id != null ? ` · run #${t.meta.run_id}` : ""}{t.meta?.resumed ? " · continued" : ""}</div>
               </div>

@@ -8,7 +8,9 @@ import { defaultWorkspace } from "./paths.ts";
 import type { Store } from "./store/store.ts";
 import type { MessageRow, NodeRunRow, RunRow } from "./store/types.ts";
 import { mergeInputs } from "./workflow/inputs.ts";
-import { canonical, checkProposal, describeCanvas, DESIGN_INSTRUCTIONS, DESIGN_REMINDER, readReply, summarizeChange, type AssistantOptions, type WorkflowChange } from "./assistant-design.ts";
+import { canonical, checkProposal, describeCanvas, DESIGN_INSTRUCTIONS, DESIGN_REMINDER, readReply, summarizeChange, type AssistantOptions, type ScheduleProposal, type WorkflowChange } from "./assistant-design.ts";
+import { addSchedule, checkSchedule, setSchedule } from "./ops.ts";
+import { describeCron, minuteKey, nextRun } from "./util/cron.ts";
 
 /**
  * Ask about a run (task 9.62): a person asks a question about one run and an agent answers it from
@@ -259,18 +261,35 @@ export interface AssistantTurn {
     change?: WorkflowChange | null;
     /** Why a change the assistant tried to make was not accepted. */
     change_error?: string | null;
+    /** The schedule it asked chief to write, if any: the page sends it to `/api/schedules`. */
+    schedule?: ScheduleChange | null;
+    /** Why a schedule it asked for was not accepted. */
+    schedule_error?: string | null;
     /** Choices the assistant offers for the next message. */
     options?: AssistantOptions | null;
   };
 }
 
-export interface AssistantResult { answer: string; adapter: string; model: string | null; session_id: string | null; cost_usd: number; resumed: boolean; run_id: number | null; workflow: string | null; change: WorkflowChange | null; change_error: string | null; options: AssistantOptions | null; conversation: AssistantTurn[] }
+/** A schedule the assistant asked for, checked against the store: what the page should write, and what it is in words. */
+export interface ScheduleChange {
+  action: "create" | "update";
+  workflow: string;
+  /** The schedule to change, for an update; null for a new one (the page learns the id when it is written). */
+  id: number | null;
+  cron?: string;
+  inputs?: Record<string, unknown>;
+  enabled?: boolean;
+  /** What it will do, in words, so the panel and the log say the same thing. */
+  description: string;
+}
+
+export interface AssistantResult { answer: string; adapter: string; model: string | null; session_id: string | null; cost_usd: number; resumed: boolean; run_id: number | null; workflow: string | null; change: WorkflowChange | null; change_error: string | null; schedule: ScheduleChange | null; schedule_error: string | null; options: AssistantOptions | null; conversation: AssistantTurn[] }
 
 /** The conversation held in the chat panel, oldest first (the prompts sent are kept but not shown). */
 export function assistantConversation(store: Store): AssistantTurn[] {
   return store.assistantMessages({ roles: ["user", "assistant"] }).map((m) => m.role === "user"
     ? { id: m.id, ts: m.ts, role: "user" as const, text: m.content, meta: { adapter: "", model: null, cost_usd: 0, resumed: false, run_id: m.meta?.run_id ?? null, workflow: m.meta?.workflow ?? null } }
-    : { id: m.id, ts: m.ts, role: "assistant" as const, text: m.content, meta: { adapter: m.meta?.adapter ?? "", model: m.meta?.model ?? null, cost_usd: m.meta?.cost_usd ?? 0, resumed: !!m.meta?.resumed, run_id: m.meta?.run_id ?? null, error: m.meta?.error ?? null, workflow: m.meta?.workflow ?? null, change: m.meta?.change ?? null, change_error: m.meta?.change_error ?? null, options: m.meta?.options ?? null } });
+    : { id: m.id, ts: m.ts, role: "assistant" as const, text: m.content, meta: { adapter: m.meta?.adapter ?? "", model: m.meta?.model ?? null, cost_usd: m.meta?.cost_usd ?? 0, resumed: !!m.meta?.resumed, run_id: m.meta?.run_id ?? null, error: m.meta?.error ?? null, workflow: m.meta?.workflow ?? null, change: m.meta?.change ?? null, change_error: m.meta?.change_error ?? null, schedule: m.meta?.schedule ?? null, schedule_error: m.meta?.schedule_error ?? null, options: m.meta?.options ?? null } });
 }
 
 /** How many of the latest exchanges a fresh session is reminded of. */
@@ -289,6 +308,9 @@ export interface CanvasInput { definition: unknown; base_dir?: string | null }
  * Asked in the designer (`workflow`, task 9.65), the agent is given the canvas instead and may
  * answer with a changed workflow, which is checked here and returned as `change` for the page to
  * put on the canvas. Nothing is written to the workflow here: the designer's autosave does that.
+ * It may also ask for a schedule (`chief-schedule`), which is written here through the same
+ * operations the Schedules page uses: a schedule is not a draft, and the answer records what was
+ * written (task 15.33).
  */
 export async function assistantAnswer(store: Store, v: { question: string; model?: string; runId?: number | null; workflow?: CanvasInput | null }): Promise<AssistantResult> {
   const question = String(v.question ?? "").trim();
@@ -307,7 +329,9 @@ export async function assistantAnswer(store: Store, v: { question: string; model
     ? JSON.stringify({ design: canonical(canvas.definition) })
     : JSON.stringify({ run: runId, record: run ? store.messageCount(run.id, { excludeKindPrefix: ASK_PREFIX }) : null, event: store.lastEventId(), runs: store.countRuns() });
   const last = store.assistantMessages({ roles: ["assistant"], limit: 1 })[0];
-  const canResume = !!last?.meta?.session_id && last.meta.adapter === adapterName && last.meta.fingerprint === fingerprint && !last.meta.error;
+  // A schedule it just wrote is why a session is not continued: the new schedule's id is one the
+  // conversation has never seen, so the next question starts from a prompt that lists it.
+  const canResume = !!last?.meta?.session_id && last.meta.adapter === adapterName && last.meta.fingerprint === fingerprint && !last.meta.error && !last.meta.schedule;
   const history = assistantConversation(store).slice(-HISTORY * 2);
 
   store.addAssistantMessage({ role: "user", content: question, meta: { run_id: runId, model, workflow: workflowName } });
@@ -328,24 +352,37 @@ export async function assistantAnswer(store: Store, v: { question: string; model
   let cost = res.usage?.cost_usd ?? 0;
   const replies = [res.text];
 
-  // In the designer: the workflow the agent sent, checked. One correction is asked for when it is not valid.
+  // In the designer: the workflow the agent sent, checked, and any schedule it asked to change. One
+  // correction is asked for when either is not acceptable.
   let text = res.text.trim();
   let change: WorkflowChange | null = null;
   let changeError: string | null = null;
+  let schedule: ScheduleChange | null = null;
+  let scheduleError: string | null = null;
   let options: AssistantOptions | null = null;
   if (canvas && !res.error) {
     let reply = readReply(text);
     let checked = reply.workflow ? checkProposal(canvas.definition, reply.workflow) : null;
     let problems = reply.workflowError ? [reply.workflowError] : checked && !checked.ok ? checked.errors : [];
-    if (problems.length && res.sessionId) {
-      const again = await call(["chief did not accept that workflow, so the canvas was not changed:", ...problems.map((p) => `- ${p}`), "", "Send your reply again with the complete corrected workflow in a ```chief-workflow block."].join("\n"), res.sessionId);
+    let sched = checkScheduleReply(store, workflowName, reply);
+    let schedProblems = reply.scheduleError ? [reply.scheduleError] : sched.error ? [sched.error] : [];
+    if ((problems.length || schedProblems.length) && res.sessionId) {
+      // Kept, because if the correction does not come the reason it was refused is what the person needs
+      // to see — "no corrected schedule was sent" on its own says nothing about what was wrong.
+      const workflowReasons = problems;
+      const scheduleReasons = schedProblems;
+      const want = [workflowReasons.length ? "the complete corrected workflow in a ```chief-workflow block" : null, scheduleReasons.length ? "the corrected schedule in a ```chief-schedule block" : null].filter(Boolean).join(" and ");
+      const again = await call(["chief did not accept that, so nothing was changed:", ...[...workflowReasons, ...scheduleReasons].map((p) => `- ${p}`), "", `Send your reply again with ${want}.`].join("\n"), res.sessionId);
       cost += again.usage?.cost_usd ?? 0;
       replies.push(again.text);
       if (!again.error && again.text.trim()) {
         res = again;
         reply = readReply(again.text.trim());
         checked = reply.workflow ? checkProposal(canvas.definition, reply.workflow) : null;
-        problems = reply.workflowError ? [reply.workflowError] : checked && !checked.ok ? checked.errors : !reply.workflow ? ["no corrected workflow was sent"] : [];
+        // A problem it was asked to fix and did not send again is still that problem.
+        problems = reply.workflowError ? [reply.workflowError] : checked && !checked.ok ? checked.errors : workflowReasons.length && !reply.workflow ? workflowReasons : [];
+        sched = checkScheduleReply(store, workflowName, reply);
+        schedProblems = reply.scheduleError ? [reply.scheduleError] : sched.error ? [sched.error] : scheduleReasons.length && !reply.schedule ? scheduleReasons : [];
       }
     }
     text = reply.text;
@@ -355,21 +392,30 @@ export async function assistantAnswer(store: Store, v: { question: string; model
       change = { workflow: checked.workflow.name, before: canvas.definition, after: checked.workflow, summary: summarizeChange(canvas.definition, checked.workflow) };
       if (!text) text = "Done.";
     }
+    if (schedProblems.length) scheduleError = schedProblems.join("\n");
+    else if (sched.change) {
+      // Written here, through the same operation the Schedules page calls: a schedule the person asked for
+      // in the chat is not a draft on a canvas, and the answer then records what was really written.
+      try {
+        schedule = writeSchedule(store, sched.change);
+        if (!text) text = schedule.action === "create" ? "Scheduled." : "Changed the schedule.";
+      } catch (e: any) { scheduleError = e.message; }
+    }
   }
 
-  const error = res.error ?? (res.interrupted || res.cancelled ? "the agent was stopped" : !text && !changeError ? "the agent returned nothing" : null);
+  const error = res.error ?? (res.interrupted || res.cancelled ? "the agent was stopped" : !text && !changeError && !scheduleError ? "the agent returned nothing" : null);
   store.addAssistantMessage({
     role: "assistant", content: text,
     meta: {
       adapter: adapterName, model, session_id: res.sessionId, usage: res.usage, cost_usd: cost, resumed, run_id: runId, error,
       // What the canvas is expected to be after this answer: the next question continues the session while it still is.
       fingerprint: canvas ? JSON.stringify({ design: canonical(change ? change.after : canvas.definition) }) : fingerprint,
-      ...(canvas ? { workflow: change?.workflow ?? workflowName, change, change_error: changeError, options, replies } : {}),
+      ...(canvas ? { workflow: change?.workflow ?? workflowName, change, change_error: changeError, schedule, schedule_error: scheduleError, options, replies } : {}),
     },
   });
   if (error) throw new EngineError(`${adapterName} could not answer: ${error}`);
-  log(`assistant: question answered by ${adapterName}${model ? ` (${model})` : ""}${runId != null ? ` about run ${runId}` : ""}${canvas ? ` in the designer (${workflowName || "new workflow"})${change ? `, canvas changed: ${change.summary.join("; ")}` : changeError ? ", a change was not accepted" : ""}` : ""}${resumed ? ", session continued" : ""}, $${cost.toFixed(4)}`);
-  return { answer: text, adapter: adapterName, model, session_id: res.sessionId, cost_usd: cost, resumed, run_id: runId, workflow: canvas ? change?.workflow ?? workflowName : null, change, change_error: changeError, options, conversation: assistantConversation(store) };
+  log(`assistant: question answered by ${adapterName}${model ? ` (${model})` : ""}${runId != null ? ` about run ${runId}` : ""}${canvas ? ` in the designer (${workflowName || "new workflow"})${change ? `, canvas changed: ${change.summary.join("; ")}` : changeError ? ", a change was not accepted" : ""}${schedule ? `, schedule ${schedule.action === "create" ? "created" : "changed"}: ${schedule.description}` : scheduleError ? ", a schedule was not accepted" : ""}` : ""}${resumed ? ", session continued" : ""}, $${cost.toFixed(4)}`);
+  return { answer: text, adapter: adapterName, model, session_id: res.sessionId, cost_usd: cost, resumed, run_id: runId, workflow: canvas ? change?.workflow ?? workflowName : null, change, change_error: changeError, schedule, schedule_error: scheduleError, options, conversation: assistantConversation(store) };
 }
 
 function canvasOf(w: CanvasInput): { definition: any; baseDir: string | null } {
@@ -382,6 +428,62 @@ function designFollowUp(question: string): string {
   return ["Follow-up (the canvas is as you last saw or left it).", "", question, "", DESIGN_REMINDER].join("\n");
 }
 
+/**
+ * Check a schedule the assistant asked for: the workflow exists, the expression parses and the inputs are
+ * enough — the same check the Schedules form gets — and, for a change, that the id belongs to this workflow.
+ * Returns what the page should write, or why it cannot.
+ */
+function checkScheduleReply(store: Store, canvasName: string | null, reply: { schedule?: ScheduleProposal }): { change: ScheduleChange | null; error: string | null } {
+  const p = reply.schedule;
+  if (!p) return { change: null, error: null };
+  try {
+    if (p.action === "create") {
+      // The canvas's workflow unless another is named; a workflow with no name yet cannot be scheduled.
+      const name = p.workflow ?? canvasName;
+      if (!name) throw new EngineError("this workflow has no name yet: name it before scheduling it");
+      const wf = store.getWorkflow(name);
+      if (!wf) throw new EngineError(`workflow "${name}" not found`);
+      const checked = checkSchedule(store, name, p.cron!, p.inputs ?? {});
+      return { change: { action: "create", workflow: wf.name, id: null, cron: checked.cron, inputs: p.inputs ?? {}, description: cronPhrase(checked.cron) }, error: null };
+    }
+    const row = store.schedule(p.id!);
+    if (!row) throw new EngineError(`schedule ${p.id} not found`);
+    // Which workflow this is about: the one named, or the one on the canvas. Changing a schedule of
+    // another workflow is only done when that workflow is named, so a conversation about this canvas
+    // cannot quietly reach into a different one.
+    const target = p.workflow ?? canvasName;
+    if (target && target !== row.workflow_name) throw new EngineError(`schedule ${p.id} belongs to "${row.workflow_name}", not "${target}"`);
+    // The pair it will become is what is checked, not just the field that changed: a new expression with
+    // the old inputs may need an input the old one did not.
+    const checked = checkSchedule(store, row.workflow_name, p.cron ?? row.cron, p.inputs ?? row.inputs ?? {});
+    const enabled = p.enabled ?? !!row.enabled;
+    return {
+      change: { action: "update", workflow: row.workflow_name, id: row.id, cron: p.cron !== undefined ? checked.cron : undefined, inputs: p.inputs, enabled: p.enabled, description: `${cronPhrase(checked.cron)}, ${enabled ? "enabled" : "paused"}` },
+      error: null,
+    };
+  } catch (e: any) {
+    return { change: null, error: e.message };
+  }
+}
+
+/** An expression in words and when it next fires, so a reply can be checked at a glance. */
+function cronPhrase(cron: string): string {
+  const next = nextRun(cron);
+  return `${describeCron(cron)}${next ? ` (next ${minuteKey(next)})` : ""}`;
+}
+
+/** Write a schedule the assistant asked for, through the same operations the Schedules page uses, and return it with its id. */
+function writeSchedule(store: Store, c: ScheduleChange): ScheduleChange {
+  const row = c.action === "create"
+    ? addSchedule(store, c.workflow, c.cron!, c.inputs ?? {})
+    : setSchedule(store, c.id!, {
+      ...(c.cron !== undefined ? { cron: c.cron } : {}),
+      ...(c.inputs !== undefined ? { inputs: c.inputs } : {}),
+      ...(c.enabled !== undefined ? { enabled: c.enabled } : {}),
+    });
+  return { ...c, id: row.id };
+}
+
 function designPrompt(store: Store, canvas: { definition: any; baseDir: string | null }, adapterName: string, question: string, history: AssistantTurn[]): string {
   const name = typeof canvas.definition.name === "string" ? canvas.definition.name : "";
   const stored = name ? store.getWorkflow(name) : null;
@@ -392,10 +494,10 @@ function designPrompt(store: Store, canvas: { definition: any; baseDir: string |
   // What the CLI reported there; chief keeps no server list of its own.
   const rows = store.mcpServers(adapterName, resolve(folder));
   const servers = (rows.length ? rows : store.mcpServers(adapterName, workspace)).map((s) => ({ name: s.name, status: String(s.config?.status ?? "unknown") }));
-  const parts = [DESIGN_INSTRUCTIONS, "", "## What the person says", "", question, "", describeCanvas({ definition: canvas.definition, version: stored?.version ?? null, baseDir: folder, servers, taken: store.listWorkflows().map((w) => w.name) })];
+  const parts = [DESIGN_INSTRUCTIONS, "", "## What the person says", "", question, "", describeCanvas({ definition: canvas.definition, version: stored?.version ?? null, baseDir: folder, servers, taken: store.listWorkflows().map((w) => w.name), schedules: name ? store.schedules().filter((s) => s.workflow_name === name).map((s) => ({ id: s.id, cron: s.cron, inputs: s.inputs, enabled: !!s.enabled })) : [] })];
   if (history.length) {
     parts.push("", "## Earlier in this conversation", "");
-    for (const t of history) parts.push(t.role === "user" ? `Person: ${t.text}` : `You: ${clip(t.text, LIMIT.answer)}${t.meta?.change ? `\n(You changed the canvas: ${t.meta.change.summary.join("; ")})` : ""}${t.meta?.options ? `\n(You offered: ${t.meta.options.options.join(" | ")})` : ""}`, "");
+    for (const t of history) parts.push(t.role === "user" ? `Person: ${t.text}` : `You: ${clip(t.text, LIMIT.answer)}${t.meta?.change ? `\n(You changed the canvas: ${t.meta.change.summary.join("; ")})` : ""}${t.meta?.schedule ? `\n(You scheduled: ${t.meta.schedule.description})` : ""}${t.meta?.options ? `\n(You offered: ${t.meta.options.options.join(" | ")})` : ""}`, "");
   }
   return parts.join("\n");
 }

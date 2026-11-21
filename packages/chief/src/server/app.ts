@@ -7,7 +7,7 @@ import { enabledProviders, providerChosenOff, providerLocated } from "../provide
 import { askAboutRun, askAdapter, askConversation, assistantAnswer, assistantConversation } from "../ask.ts";
 import { answerGate, driveRun, EngineError, requestCancel, requestPause, rerunRun, resumeRun, startRun } from "../engine/engine.ts";
 import { revertRun } from "../engine/saga.ts";
-import { addSchedule, approveWorkflow, cloneWorkflow, ConflictError, deleteRuns, doctor, ensureMcp, knownFolders, listModels, refreshMcp, pendingApprovals, refinePrompt, runDetail, changeStep, setStepModel, saveDefinition, validateFull } from "../ops.ts";
+import { addSchedule, approveWorkflow, cloneWorkflow, ConflictError, deleteRuns, doctor, ensureMcp, knownFolders, listModels, refreshMcp, pendingApprovals, refinePrompt, runDetail, changeStep, setStepModel, saveDefinition, setSchedule, validateFull } from "../ops.ts";
 import { log, logDebug, logging } from "../log.ts";
 import { defaultWorkspace } from "../paths.ts";
 import { sandboxStatus } from "../sandbox/sandbox.ts";
@@ -427,7 +427,13 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
   app.patch("/api/schedules/:id", async (c) => {
     const b = await body(c);
     const sid = id(c.req.param("id"), "schedule id");
-    store.setScheduleEnabled(sid, !!b.enabled);
+    // Any of the three, and only the ones given: the switch sends `enabled`, the assistant may send a new
+    // expression or new inputs as well. All of it goes through the same check a new schedule gets.
+    const patch: { cron?: string; inputs?: Record<string, unknown>; enabled?: boolean } = {};
+    if (b.cron !== undefined) patch.cron = String(b.cron);
+    if (b.inputs !== undefined) patch.inputs = b.inputs ?? {};
+    if (b.enabled !== undefined) patch.enabled = !!b.enabled;
+    setSchedule(store, sid, patch);
     const row = store.schedules().find((s) => s.id === sid);
     return c.json(row ? scheduleView(row) : null);
   });

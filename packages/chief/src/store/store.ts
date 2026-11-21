@@ -476,5 +476,15 @@ export class Store {
   countSchedules(): number { return (this.one("SELECT COUNT(*) AS n FROM workflow__schedules") as { n: number }).n; }
   removeSchedule(id: number): boolean { return this.db.run("DELETE FROM workflow__schedules WHERE id = ?", [id]).changes > 0; }
   setScheduleEnabled(id: number, enabled: boolean) { this.db.run("UPDATE workflow__schedules SET enabled = ? WHERE id = ?", [enabled ? 1 : 0, id]); }
+  /** Change what a schedule runs on: its expression, its inputs, whether it fires. Only the given fields. */
+  updateSchedule(id: number, patch: { cron?: string; inputs?: any; enabled?: boolean }) {
+    if (patch.cron !== undefined) this.db.run("UPDATE workflow__schedules SET cron = ? WHERE id = ?", [patch.cron, id]);
+    if (patch.inputs !== undefined) this.db.run("UPDATE workflow__schedules SET inputs_json = ? WHERE id = ?", [j(patch.inputs), id]);
+    if (patch.enabled !== undefined) this.db.run("UPDATE workflow__schedules SET enabled = ? WHERE id = ?", [patch.enabled ? 1 : 0, id]);
+  }
+  /** One schedule joined with its workflow's name, or undefined. */
+  schedule(id: number): (ScheduleRow & { workflow_name: string }) | undefined {
+    return this.one("SELECT s.*, w.name AS workflow_name FROM workflow__schedules s JOIN workflow__definitions w ON w.id = s.workflow_id WHERE s.id = ?", [id]) ?? undefined;
+  }
   touchSchedule(id: number, at: string) { this.db.run("UPDATE workflow__schedules SET last_run_at = ? WHERE id = ?", [at, id]); }
 }

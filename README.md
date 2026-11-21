@@ -146,9 +146,14 @@ from that run's own record: the step, the error, the cause in a few lines, and t
 it knows your workflows, the recent runs and the gates waiting for you ("which runs failed, and why?",
 "what is waiting for me?"). Also on the command line: `chief runs ask <id> "<question>"`.
 
-It **runs nothing and changes nothing during a run**: it writes workflows before a run and reads records
-after one, with no tools and no MCP servers of its own. Every change it makes is listed under its answer
-with Undo.
+It **runs nothing and changes nothing during a run**: it writes workflows and their schedules before a run
+and reads records after one, with no tools and no MCP servers of its own. Every change it makes to a
+workflow is listed under its answer with Undo.
+
+A schedule is part of authoring too: in the designer, "run this every weekday at 9am" adds one, and
+"pause it" or "make it 6pm instead" changes it. chief checks the expression and the workflow's inputs with
+the same check the Schedules form gets, and writes it the same way — so a schedule it wrote behaves
+exactly like one added by hand.
 
 ![chief bot building a workflow: the conversation in the panel, the steps it made on the canvas behind it](docs/screenshots/chief-bot.png)
 

@@ -11,6 +11,22 @@ and not yet in a version.
 
 Nothing yet.
 
+## [0.2.2] — 2026-11-20
+
+### Added
+
+- **Ask chief bot for a schedule.** In the designer, "run this every weekday at 9am" adds one, "pause it"
+  pauses the one you just made, and "make it 6pm instead" changes it — and it is listed on the Schedules
+  page like any other. chief checks the expression and the workflow's inputs exactly as the form does, so
+  a schedule it wrote behaves like one added by hand, and an expression it cannot accept is asked for again
+  once and, if it is still wrong, not written at all.
+
+### Fixed
+
+- **The bot no longer loses its reason when a change is refused twice.** When it was asked to correct
+  something and its second answer did not contain the correction, the panel said only that nothing had been
+  sent; it now shows what was actually wrong with the first one.
+
 ## [0.2.1] — 2026-11-20
 
 ### Added

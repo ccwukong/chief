@@ -1,5 +1,6 @@
 import { validateWorkflow } from "./workflow/load.ts";
 import { nodeSchema } from "./workflow/schema.ts";
+import { describeCron } from "./util/cron.ts";
 
 /**
  * The assistant in the designer (task 9.65): it builds and changes the workflow on the canvas as
@@ -34,8 +35,8 @@ export function canonical(def: any): string {
 
 const BLOCK = (tag: string) => new RegExp("```" + tag + "[^\\n]*\\n([\\s\\S]*?)\\n```", "g");
 
-/** Take the `chief-workflow` and `chief-options` blocks out of a reply. The last one of each counts. */
-export function readReply(text: string): { text: string; workflow?: unknown; workflowError?: string; options?: AssistantOptions } {
+/** Take the `chief-workflow`, `chief-options` and `chief-schedule` blocks out of a reply. The last of each counts. */
+export function readReply(text: string): { text: string; workflow?: unknown; workflowError?: string; options?: AssistantOptions; schedule?: ScheduleProposal; scheduleError?: string } {
   const out: ReturnType<typeof readReply> = { text };
   const wf = [...text.matchAll(BLOCK("chief-workflow"))].at(-1);
   if (wf) {
@@ -52,8 +53,50 @@ export function readReply(text: string): { text: string; workflow?: unknown; wor
       if (options.length) out.options = { question: typeof o?.question === "string" ? o.question.trim() : "", options };
     } catch { /* options that cannot be read are left out; the answer still stands */ }
   }
-  out.text = text.replace(BLOCK("chief-workflow"), "").replace(BLOCK("chief-options"), "").replace(/\n{3,}/g, "\n\n").trim();
+  const sc = [...text.matchAll(BLOCK("chief-schedule"))].at(-1);
+  if (sc) {
+    const read = readScheduleBlock(sc[1]);
+    if (read.proposal) out.schedule = read.proposal;
+    else out.scheduleError = read.error!;
+  }
+  out.text = text.replace(BLOCK("chief-workflow"), "").replace(BLOCK("chief-options"), "").replace(BLOCK("chief-schedule"), "").replace(/\n{3,}/g, "\n\n").trim();
   return out;
+}
+
+/**
+ * What the assistant asked to change about a workflow's schedules. It is a request, not a write: chief
+ * checks it against the workflow (and the cron parser) and the page sends it to `/api/schedules`, the
+ * same endpoint the Schedules form uses. The agent still has no tools — this is how it asks.
+ */
+export interface ScheduleProposal {
+  action: "create" | "update";
+  /** The workflow to schedule; left out means the one on the canvas. */
+  workflow?: string;
+  /** The schedule to change, for `update`. */
+  id?: number;
+  cron?: string;
+  inputs?: Record<string, unknown>;
+  enabled?: boolean;
+}
+
+/** The shape of a `chief-schedule` block, checked as text. The workflow and cron are checked later, with the store. */
+export function readScheduleBlock(json: string): { proposal?: ScheduleProposal; error?: string } {
+  let v: any;
+  try { v = JSON.parse(json); } catch (e: any) { return { error: `the chief-schedule block is not valid JSON: ${e.message}` }; }
+  if (!v || typeof v !== "object" || Array.isArray(v)) return { error: "the chief-schedule block must hold one JSON object" };
+  const action = v.action;
+  if (action !== "create" && action !== "update") return { error: 'a chief-schedule block needs `action`: "create" or "update"' };
+  if (v.workflow !== undefined && (typeof v.workflow !== "string" || !v.workflow.trim())) return { error: "`workflow` must be the name of a workflow" };
+  if (v.inputs !== undefined && (!v.inputs || typeof v.inputs !== "object" || Array.isArray(v.inputs))) return { error: "`inputs` must be one JSON object" };
+  if (v.enabled !== undefined && typeof v.enabled !== "boolean") return { error: "`enabled` must be true or false" };
+  if (action === "create") {
+    if (typeof v.cron !== "string" || !v.cron.trim()) return { error: "a new schedule needs `cron`: a five-field cron expression" };
+  } else {
+    if (!Number.isInteger(v.id) || v.id < 1) return { error: "changing a schedule needs its `id`, as shown in the list of this workflow's schedules" };
+    if (v.cron !== undefined && (typeof v.cron !== "string" || !v.cron.trim())) return { error: "`cron` must be a five-field cron expression" };
+    if (v.cron === undefined && v.enabled === undefined && v.inputs === undefined) return { error: "an update must change something: `cron`, `inputs` or `enabled`" };
+  }
+  return { proposal: { action, workflow: typeof v.workflow === "string" ? v.workflow.trim() : undefined, id: v.id, cron: typeof v.cron === "string" ? v.cron.trim() : undefined, inputs: v.inputs, enabled: v.enabled } };
 }
 
 /** Every step that can carry these fields: the top-level steps, a map's inner step, and compensations. */
@@ -134,6 +177,12 @@ export const DESIGN_INSTRUCTIONS = [
   "- When the request leaves a real choice open (which of several designs, which data, where a person should be asked), or when you see an improvement worth making that was not asked for, do not guess: make the part that is clear, and offer the choice. End your reply with a block whose first line is ```chief-options holding {\"question\": \"…\", \"options\": [\"…\", \"…\"]}: two to four short options, each a complete instruction you can carry out as it is written. The person picks one or types something else, so do not add an \"other\" option yourself. Offer options only when they help; most replies need none.",
   "- You have no tools. You cannot run the workflow, read files or reach any service, and you must not pretend to. You cannot write script files either.",
   "",
+  "## Schedules",
+  "A workflow can start itself on a cron schedule. The canvas below lists this workflow's schedules with their ids; use those ids. To add or change one, end your reply with a fenced block whose first line is ```chief-schedule holding one JSON object, and chief writes it straight away:",
+  '- New: {"action": "create", "cron": "0 9 * * 1-5", "inputs": {}} — five fields, minutes first, in the machine\'s own time zone. It belongs to the workflow on the canvas unless `workflow` names another.',
+  '- Change: {"action": "update", "id": 3, "cron": "30 18 * * *"} — any of `cron`, `inputs`, or `enabled` (false pauses it, true starts it again). The id must be one of this workflow\'s; to change another workflow\'s schedule, name that workflow in `workflow` and only do it when the person asked for it by name.',
+  "Say the time in words in your reply (\"every weekday at 09:00\") as well as giving the expression, so the person can check it at a glance. You cannot delete a schedule: say that the Schedules page has a Remove button. Never send this block when the person is only asking about a schedule.",
+  "",
   "## The workflow format",
   "A workflow is: `name` (lower-case letters, digits and dashes), optional `description`, optional `budget` ({\"warn-usd\": number, \"max-usd\": number}), optional `inputs` (one JSON object with a section per step id: {\"collector\": {\"team\": \"…\"}}), `nodes` (the steps) and `edges` (the arrows: [{\"from\": \"a\", \"to\": \"b\"}], b runs after a; no cycles). Steps nothing points to run first; steps without a path between them may run side by side.",
   "Every step has an `id` (lower-case letters, digits and dashes, unique) and a `type`:",
@@ -152,10 +201,10 @@ export const DESIGN_INSTRUCTIONS = [
   "Leave these alone, exactly as they are and never on a new step: `model` and `agent` (the person picks them from the agent CLI's lists), and a script's `sandbox` (the person grants and approves it). When asked for one of them, say where it is set: the step's panel in the designer.",
 ].join("\n");
 
-export const DESIGN_REMINDER = "Reply as before: a few sentences; when the canvas should change, the COMPLETE workflow in a ```chief-workflow block at the end; options in a ```chief-options block only when a choice is really open.";
+export const DESIGN_REMINDER = "Reply as before: a few sentences; when the canvas should change, the COMPLETE workflow in a ```chief-workflow block at the end; when a schedule should be added or changed, a ```chief-schedule block; options in a ```chief-options block only when a choice is really open.";
 
 /** The canvas as the agent is shown it. */
-export function describeCanvas(v: { definition: any; version: number | null; baseDir: string | null; servers: { name: string; status: string }[]; taken: string[] }): string {
+export function describeCanvas(v: { definition: any; version: number | null; baseDir: string | null; servers: { name: string; status: string }[]; taken: string[]; schedules?: { id: number; cron: string; inputs: any; enabled: boolean }[] }): string {
   const def = withoutLayout(v.definition);
   const out: string[] = ["# The canvas right now", ""];
   const steps = Array.isArray(def.nodes) ? def.nodes.length : 0;
@@ -169,6 +218,11 @@ export function describeCanvas(v: { definition: any; version: number | null; bas
   }
   out.push("", "## MCP servers the agent CLI reports for this workflow's folder", "");
   out.push(v.servers.length ? v.servers.map((s) => `- ${s.name} (${s.status})`).join("\n") : "None are known. Leave `mcp` out of new steps.");
+  // A schedule is written by the page after the reply, so the agent is given what exists — with the ids it
+  // needs to change or pause one — and its own cron expression in words, from the engine's only parser.
+  out.push("", "## Schedules of this workflow", "");
+  if (!v.schedules || !v.schedules.length) out.push("None. A schedule is how this workflow starts by itself.");
+  else for (const s of v.schedules) out.push(`- #${s.id}: \`${s.cron}\` (${describeCron(s.cron)}), ${s.enabled ? "enabled" : "paused"}${s.inputs && Object.keys(s.inputs).length ? `, inputs ${JSON.stringify(s.inputs)}` : ""}`);
   const others = v.taken.filter((n) => n !== def.name);
   if (others.length) out.push("", `Workflow names already in use (a new or renamed workflow needs another): ${others.join(", ")}.`);
   return out.join("\n");

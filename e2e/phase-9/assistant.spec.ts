@@ -208,7 +208,7 @@ test("E9.65-1 asked with the canvas, the assistant returns a checked workflow as
     expect(a3.body).toMatchObject({ answer: "Corrected.", change_error: null, cost_usd: 0.02, resumed: false });
     expect(a3.body.change.summary).toEqual(["Workflow settings: description"]);
     const fix = chief.calls().at(-1)!;
-    expect(fix.prompt).toContain("chief did not accept that workflow");
+    expect(fix.prompt).toContain("chief did not accept that, so nothing was changed");
     expect(fix.prompt).toContain("write {{nodes.collector.output}}");
     expect(chief.calls().at(-2)!.prompt).toContain('Workflow "review", not saved yet');
     expect(chief.calls().at(-2)!.prompt).toContain("## Earlier in this conversation");
