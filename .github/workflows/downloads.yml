@@ -77,4 +77,12 @@ jobs:
           total="$(node -p 'require("./downloads.json").total')"
           git add downloads.json
           git commit -m "downloads: ${total} total [skip ci]"
-          git push
+          # A refused push is bookkeeping, not a red repository — the same rule as a tally that cannot read
+          # GitHub. `main` is protected ("changes must be made through a pull request"), so the ledger commit
+          # can be refused; say so, and say what it means, instead of failing every release with an X that
+          # teaches people to ignore Xs. Set `GH_TOKEN`'s owner to an account allowed to push, or commit the
+          # tally by hand, to keep the ledger itself moving.
+          if ! git push 2>push.log; then
+            echo "::notice title=Ledger not committed::the tally could not be pushed ($(tail -1 push.log)). downloads.json is unchanged in the repository; the count is still recorded by GitHub on the release assets."
+            exit 0
+          fi

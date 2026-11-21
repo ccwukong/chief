@@ -434,6 +434,9 @@ test("E15.29-6 a tally commit keeps the ledger current, says [skip ci], and star
   expect(run).toContain("git push");
   // A tally that cannot read GitHub is a notice, not a red repository: bookkeeping must not break history.
   expect(run).toContain("::notice");
+  // The same for a push the branch protection refuses (`GH006`): the ledger commit is bookkeeping, so it
+  // says so and the job still passes. Without this, every release on protected `main` ends with a red X.
+  expect(run, "a refused push is a notice").toMatch(/if ! git push[\s\S]*::notice[\s\S]*?exit 0/);
 
   // And the two workflows a tally commit would otherwise start ignore it by path.
   for (const file of ["ci.yml", "desktop.yml"]) {
