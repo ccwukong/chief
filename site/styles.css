@@ -97,6 +97,16 @@ img { max-width: 100%; height: auto; display: block; }
 .terms a { color: var(--teal); }
 .terms code { font-family: var(--mono); font-size: .88em; background: var(--teal-soft); color: var(--teal); padding: .1em .35em; border-radius: 4px; }
 
+/* The CLIs chief drives, under the hero buttons. A chip with a mark, or a name on its own where there is
+   no mark to show: an icon has to be the vendor's, so a product without one is named, never given an
+   invented logo. */
+.agents { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin: 1.1rem 0 0; }
+.agents-label { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; margin-right: .2rem; }
+.agent { display: inline-flex; align-items: center; gap: .35rem; font-size: .84rem; font-weight: 600; color: var(--ink-soft); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: .22rem .6rem .22rem .3rem; }
+.agent.no-mark { padding-left: .6rem; }
+.agent img { display: block; border-radius: 5px; }
+:root[data-theme="dark"] .agent img { box-shadow: 0 0 0 1px var(--line); }
+
 /* ── nav ─────────────────────────────────────────────────────────────── */
 .nav {
   position: sticky; top: 0; z-index: 20;

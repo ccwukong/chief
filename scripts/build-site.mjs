@@ -66,6 +66,8 @@ cpSync(join(src, "styles.css"), join(out, "styles.css"));
 // whether to run this should be able to read the same thing in plain words, from the page and from the
 // repository. E15.20-5 checks the two carry the same claims.
 cpSync(join(src, "terms.html"), join(out, "terms.html"));
+// The agent CLIs' marks, beside the screenshots: the page and the README show the same files.
+cpSync(join(root, "docs/logos"), join(out, "assets/logos"), { recursive: true });
 
 // The logo, and every screenshot, from where the repository already keeps them.
 cpSync(join(root, "packages/web/public/logo.svg"), join(out, "assets/logo.svg"));

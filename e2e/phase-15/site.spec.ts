@@ -277,3 +277,46 @@ test("E15.20-5 the terms page is published, linked from the page and the README,
   // personal name presented as the terms' authority.
   expect(terms).not.toMatch(/Chen Cheng/);
 });
+
+/**
+ * The "works with" strip (asked for 2026-11-21: *"add the supported agent cli with their official logos"*).
+ * Two things can go wrong with a strip like this: a logo that is not the vendor's, and a strip that drifts
+ * from the app — a CLI chief cannot drive, or a mark for a CLI that is not listed.
+ */
+test("E15.20-6 the agent strip shows a real mark only where one exists, and names every CLI chief can drive", () => {
+  const out = build();
+  const html = readFileSync(join(out, "index.html"), "utf8");
+  // Every adapter registered in the code, read from the one list that decides it.
+  const adapters = /ADAPTER_NAMES\s*=\s*\[([^\]]+)\]/.exec(readFileSync(join(ROOT_DIR, "packages/chief/src/adapters/index.ts"), "utf8"))!;
+  const names = [...adapters[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  // The label each adapter is shown under, from the web UI's own map (`{ "claude-code": "Claude Code", codex: "Codex", … }`).
+  const labels = readFileSync(join(ROOT_DIR, "packages/web/src/pages/settings.tsx"), "utf8");
+  const label = (id: string) => new RegExp(`["']?${id}["']?\\s*:\\s*["']([^"']+)["']`).exec(labels)?.[1] ?? id;
+
+  const strip = /<div class="agents"[\s\S]*?<\/div>/.exec(html);
+  expect(strip, "a works-with strip").toBeTruthy();
+  const shown = strip![0];
+  for (const id of names) {
+    expect(shown.toLowerCase(), `${id} is named in the strip`).toContain(label(id).toLowerCase());
+  }
+  // A mark, or the CLI named without one — never a mark made up for it. The two without a vendor mark say so
+  // by being in the strip with no <img>.
+  expect(shown).toContain("Codex");
+  expect(shown).not.toMatch(/logos\/codex/);
+  expect(shown).not.toMatch(/logos\/antigravity/);
+  // Each mark that is shown is a committed file that exists, and is copied into the published folder.
+  for (const [, file] of shown.matchAll(/assets\/logos\/([\w.-]+)/g)) {
+    expect(existsSync(join(ROOT_DIR, "docs/logos", file)), `docs/logos/${file}`).toBe(true);
+    expect(existsSync(join(out, "assets/logos", file)), `the published copy of ${file}`).toBe(true);
+  }
+  // The README shows the same set: same files, so the two cannot disagree about which CLIs have a mark.
+  // (Only image files — the README also links the folder's own notes.)
+  const readme = readFileSync(join(ROOT_DIR, "README.md"), "utf8");
+  const marks = /\.(?:svg|png)$/;
+  const inReadme = new Set([...readme.matchAll(/docs\/logos\/([\w.-]+)/g)].map((m) => m[1]).filter((f) => marks.test(f)));
+  const inPage = new Set([...shown.matchAll(/assets\/logos\/([\w.-]+)/g)].map((m) => m[1]));
+  expect([...inReadme].sort()).toEqual([...inPage].sort());
+  // And the sources are written down, so a mark is never an unsourced image in the tree.
+  const sources = readFileSync(join(ROOT_DIR, "docs/logos/readme.md"), "utf8");
+  for (const file of inPage) expect(sources, `the source of ${file}`).toContain(file);
+});

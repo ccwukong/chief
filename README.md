@@ -7,6 +7,19 @@
 chief runs workflows made of AI agents on your own machine, and stops to ask you before
 anything you want to decide yourself.
 
+<p align="center">
+  <sub><b>WORKS WITH</b></sub><br>
+  <img src="docs/logos/claude.svg" width="18" height="18" alt="Claude Code"> <b>Claude Code</b>
+  &nbsp;·&nbsp; <b>Codex</b>
+  &nbsp;·&nbsp; <img src="docs/logos/cursor.svg" width="18" height="18" alt="Cursor"> <b>Cursor</b>
+  &nbsp;·&nbsp; <b>Antigravity</b>
+  &nbsp;·&nbsp; <img src="docs/logos/opencode.svg" width="18" height="18" alt="OpenCode"> <b>OpenCode</b>
+  &nbsp;·&nbsp; <img src="docs/logos/hermes.png" width="18" height="18" alt="Hermes"> <b>Hermes</b>
+</p>
+
+The marks above are the vendors' own, shown to say which CLIs chief drives — see
+[docs/logos](docs/logos/readme.md) for where each came from, and why Codex and Antigravity have none.
+
 You draw a workflow as a small graph of steps: "read my Slack and list what I need to do", "ask
 me which of these to handle", "do them", "write a report". chief runs the steps with the agent CLI
 you already use (Claude Code, Antigravity or OpenCode; Codex and Cursor experimentally), waits at the points where you want
