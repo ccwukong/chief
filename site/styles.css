@@ -1,27 +1,11 @@
 /* chief's landing page. Hand-written, no framework, no external request: the page loads in one round
-   trip and works from a USB stick. Colours are the app's own (teal, amber, red on slate). */
+   trip and works from a USB stick. Colours are the app's own (teal, amber, red on slate).
+
+   **Dark is the default** (asked for 2026-11-21): it is the theme the screenshots show and what most
+   people run the app in. `data-theme` is set by the toggle, or from `localStorage` before first paint, so
+   a visitor who chose light keeps it; nothing else switches it. */
 
 :root {
-  --theme-name: light;
-  --ink: #0f172a;
-  --ink-soft: #475569;
-  --ink-faint: #94a3b8;
-  --page: #f6f7f9;
-  --surface: #ffffff;
-  --line: #e2e8f0;
-  --teal: #0f766e;
-  --teal-soft: #ccfbf1;
-  --amber: #f59e0b;
-  --amber-soft: #fef3c7;
-  --red: #dc2626;
-  --red-soft: #fee2e2;
-  --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 12px 32px -12px rgba(15, 23, 42, .18);
-  --radius: 14px;
-  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color-scheme: light;
-}
-
-:root[data-theme="dark"] {
   --theme-name: dark;
   --ink: #f1f5f9;
   --ink-soft: #aab6c5;
@@ -36,27 +20,27 @@
   --red: #fca5a5;
   --red-soft: #3a1a1f;
   --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 18px 40px -18px rgba(0, 0, 0, .7);
+  --radius: 14px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --theme-name: dark;
-    --ink: #f1f5f9;
-    --ink-soft: #aab6c5;
-    --ink-faint: #7d8b9e;
-    --page: #0b1220;
-    --surface: #121c2b;
-    --line: #24303f;
-    --teal: #5eead4;
-    --teal-soft: #0b3a2f;
-    --amber: #fcd34d;
-    --amber-soft: #3a2b0e;
-    --red: #fca5a5;
-    --red-soft: #3a1a1f;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 18px 40px -18px rgba(0, 0, 0, .7);
-    color-scheme: dark;
-  }
+:root[data-theme="light"] {
+  --theme-name: light;
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --ink-faint: #94a3b8;
+  --page: #f6f7f9;
+  --surface: #ffffff;
+  --line: #e2e8f0;
+  --teal: #0f766e;
+  --teal-soft: #ccfbf1;
+  --amber: #f59e0b;
+  --amber-soft: #fef3c7;
+  --red: #dc2626;
+  --red-soft: #fee2e2;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 12px 32px -12px rgba(15, 23, 42, .18);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -97,15 +81,20 @@ img { max-width: 100%; height: auto; display: block; }
 .terms a { color: var(--teal); }
 .terms code { font-family: var(--mono); font-size: .88em; background: var(--teal-soft); color: var(--teal); padding: .1em .35em; border-radius: 4px; }
 
-/* The CLIs chief drives, under the hero buttons. A chip with a mark, or a name on its own where there is
-   no mark to show: an icon has to be the vendor's, so a product without one is named, never given an
-   invented logo. */
-.agents { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin: 1.1rem 0 0; }
-.agents-label { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; margin-right: .2rem; }
-.agent { display: inline-flex; align-items: center; gap: .35rem; font-size: .84rem; font-weight: 600; color: var(--ink-soft); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: .22rem .6rem .22rem .3rem; }
-.agent.no-mark { padding-left: .6rem; }
-.agent img { display: block; border-radius: 5px; }
-:root[data-theme="dark"] .agent img { box-shadow: 0 0 0 1px var(--line); }
+/* The CLIs chief drives, on a row of their own under the hero. Centred and on one line at any normal
+   width; it wraps only when the window is too narrow to hold it, and then it stays centred rather than
+   turning into a column of stray names (which is what it did inside the hero's text column). */
+.agents-row { border-block: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 60%, var(--page)); }
+.agents { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .55rem 1.4rem; max-width: 1180px; margin: 0 auto; padding: .85rem clamp(16px, 4vw, 40px); }
+.agents-label { font-size: .76rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; }
+.agent { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+.agent img { display: block; border-radius: 5px; flex: none; }
+:root:not([data-theme="light"]) .agent img { box-shadow: 0 0 0 1px var(--line); }
+@media (max-width: 700px) {
+  /* Below this the row cannot hold six names: keep them centred and let them wrap, two per line. */
+  .agents { gap: .5rem 1rem; }
+  .agents-label { width: 100%; text-align: center; margin-bottom: .1rem; }
+}
 
 /* ── nav ─────────────────────────────────────────────────────────────── */
 .nav {
@@ -124,9 +113,14 @@ img { max-width: 100%; height: auto; display: block; }
 /* The pill is taller than a line of text, so the whole nav is centred on one axis: without this the links
    sat on the pill's top edge and the row read as misaligned (reported 2026-11-21). */
 .nav-cta { color: var(--surface) !important; background: var(--teal); padding: .35rem .8rem; border-radius: 999px; font-weight: 600; line-height: 1.5; }
-:root[data-theme="dark"] .nav-cta { color: #08211c !important; }
 .theme { margin-left: .4rem; background: none; border: 1px solid var(--line); border-radius: 999px; padding: .4rem; cursor: pointer; color: var(--ink-soft); display: inline-flex; align-items: center; }
-.theme svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.theme svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* The button shows what pressing it gives you: a sun while the page is dark, a moon while it is light.
+   (It used to be one static half-filled circle nobody could read — reported 2026-11-21.) */
+.theme .icon-sun { display: inline; }
+.theme .icon-moon { display: none; }
+:root[data-theme="light"] .theme .icon-sun { display: none; }
+:root[data-theme="light"] .theme .icon-moon { display: inline; }
 @media (max-width: 760px) { .nav-links { display: none; } }
 
 /* ── hero ────────────────────────────────────────────────────────────── */
@@ -154,8 +148,8 @@ img { max-width: 100%; height: auto; display: block; }
    on a translucent plate in both themes. */
 .btn-primary .chip { background: rgba(255, 255, 255, .6); color: #06231f; }
 .btn.small { padding: .45rem .8rem; font-size: .9rem; }
-:root[data-theme="dark"] .btn-primary { color: #06231f; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn-primary { color: #06231f; } }
+/* On the light theme's darker teal, white is the readable colour (dark ink on `#0f766e` is not). */
+:root[data-theme="light"] .btn-primary { color: #ffffff; }
 .chip { font-size: .74rem; font-weight: 700; padding: .12rem .45rem; border-radius: 999px; background: var(--teal-soft); color: var(--teal); }
 .trust { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem .9rem; padding: 1rem 0 0; margin: 0; font-size: .85rem; color: var(--ink-soft); border-top: 1px dashed var(--line); }
 .trust li::before { content: "✓"; color: var(--teal); font-weight: 800; margin-right: .35rem; }

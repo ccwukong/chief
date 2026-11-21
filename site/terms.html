@@ -6,7 +6,7 @@
 <title>Terms — chief</title>
 <meta name="description" content="chief's terms: Apache-2.0 software, provided as is, with no warranty and no liability for loss. In plain words.">
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v={{version}}">
 <!--
   The site's copy of `docs/terms.md`, which is the canonical one in the repository. The wording is the same
   on purpose: a person reading it here and a person reading it on GitHub must not be told two different
@@ -24,6 +24,10 @@
     <a href="index.html">Home</a>
     <a href="https://github.com/ccwukong/chief/blob/main/docs/terms.md">This page on GitHub</a>
   </nav>
+  <button id="theme" class="theme" type="button" aria-label="Switch colour theme" title="Switch between dark and light">
+    <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.4v2.3M12 19.3v2.3M4.5 4.5l1.6 1.6M17.9 17.9l1.6 1.6M2.4 12h2.3M19.3 12h2.3M4.5 19.5l1.6-1.6M17.9 6.1l1.6-1.6"/></svg>
+    <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.6 8.6 0 0 1 9.8 3.5a8.6 8.6 0 1 0 10.7 10.7z"/></svg>
+  </button>
 </header>
 
 <main>
@@ -137,6 +141,22 @@
     </nav>
   </div>
 </footer>
+
+<script>
+// The same theme as the front page: dark unless a choice was stored, and the toggle remembers it. Kept
+// inline and tiny — the page loads in one request and works from a file.
+(() => {
+  const root = document.documentElement;
+  const saved = localStorage.getItem("chief-site-theme");
+  if (saved === "light" || saved === "dark") root.dataset.theme = saved;
+  document.getElementById("theme").addEventListener("click", () => {
+    const now = getComputedStyle(root).getPropertyValue("--theme-name").trim() || "dark";
+    const next = now === "dark" ? "light" : "dark";
+    root.dataset.theme = next;
+    localStorage.setItem("chief-site-theme", next);
+  });
+})();
+</script>
 
 </body>
 </html>

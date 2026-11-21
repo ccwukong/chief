@@ -65,7 +65,14 @@ cpSync(join(src, "styles.css"), join(out, "styles.css"));
 // The terms are a page of their own: the licence says "as is" in legal drafting, and a person deciding
 // whether to run this should be able to read the same thing in plain words, from the page and from the
 // repository. E15.20-5 checks the two carry the same claims.
-cpSync(join(src, "terms.html"), join(out, "terms.html"));
+//
+// Both pages ask for `styles.css?v=<version>`. GitHub Pages caches assets hard, and a new page over a
+// cached stylesheet renders as bare markup — which is exactly how the agent strip was first reported
+// (2026-11-21: a column of stray names, because the HTML was new and the CSS was not). A version in the
+// query string makes a release's page and its stylesheet arrive together.
+const terms = readFileSync(join(src, "terms.html"), "utf8").replaceAll("{{version}}", version);
+if (/\{\{/.test(terms)) throw new Error(`a placeholder was left in the terms page: ${terms.match(/\{\{[^}]*\}\}/)?.[0]}`);
+writeFileSync(join(out, "terms.html"), terms);
 // The agent CLIs' marks, beside the screenshots: the page and the README show the same files.
 cpSync(join(root, "docs/logos"), join(out, "assets/logos"), { recursive: true });
 

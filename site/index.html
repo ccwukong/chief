@@ -10,7 +10,7 @@
 <meta property="og:image" content="assets/screenshots/designer.png">
 <meta property="og:type" content="website">
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v={{version}}">
 </head>
 <body>
 
@@ -26,8 +26,12 @@
     <a href="#modes">Install</a>
     <a class="nav-cta" href="#download">Download</a>
   </nav>
-  <button id="theme" class="theme" type="button" aria-label="Switch colour theme" title="Light, dark or system">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>
+  <button id="theme" class="theme" type="button" aria-label="Switch colour theme" title="Switch between dark and light">
+    <!-- Both icons are in the markup and CSS shows one: the icon says what pressing it gives you — a sun
+         while the page is dark, a moon while it is light. A single static glyph left people guessing which
+         way it went (reported 2026-11-21: "the toggle … should use a sun icon instead of the current one"). -->
+    <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.4v2.3M12 19.3v2.3M4.5 4.5l1.6 1.6M17.9 17.9l1.6 1.6M2.4 12h2.3M19.3 12h2.3M4.5 19.5l1.6-1.6M17.9 6.1l1.6-1.6"/></svg>
+    <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.6 8.6 0 0 1 9.8 3.5a8.6 8.6 0 1 0 10.7 10.7z"/></svg>
   </button>
 </header>
 
@@ -58,19 +62,6 @@
         Node. Either way it is free and unsigned; macOS asks once, and that is what the
         <a href="#modes">one command</a> clears.
       </p>
-      <!-- The CLIs chief drives. A mark is shown only where there is one to show: Claude Code, Cursor,
-           OpenCode and Hermes have a logo here, Codex and Antigravity do not (OpenAI withdrew its mark from
-           the icon set this repository draws on, and Antigravity has none to redistribute), so those two are
-           named rather than given an invented one. E15.20-6 keeps the two lists in step. -->
-      <div class="agents" data-testid="agents">
-        <span class="agents-label">Works with</span>
-        <span class="agent"><img src="assets/logos/claude.svg" alt="" width="18" height="18">Claude Code</span>
-        <span class="agent no-mark">Codex</span>
-        <span class="agent"><img src="assets/logos/cursor.svg" alt="" width="18" height="18">Cursor</span>
-        <span class="agent no-mark">Antigravity</span>
-        <span class="agent"><img src="assets/logos/opencode.svg" alt="" width="18" height="18">OpenCode</span>
-        <span class="agent"><img src="assets/logos/hermes.png" alt="" width="18" height="18">Hermes</span>
-      </div>
       <ul class="trust">
         <li><b>Your agent CLI</b> — not a model chief resells</li>
         <li><b>Everything on disk</b> — one folder, one database</li>
@@ -81,6 +72,26 @@
       <img src="assets/screenshots/designer.png" alt="The chief designer: building blocks on the left, the workflow as a graph in the middle, the selected step's settings on the right." width="1360" height="860" loading="eager">
       <figcaption>The designer. Arrows are the order. It saves itself as you draw.</figcaption>
     </figure>
+  </section>
+
+  <!-- ── works with ──────────────────────────────────────────────────────────
+       A row of its own, under the hero, because six CLIs do not fit in the hero's text column: there they
+       wrapped into a ragged column one chip wide and read as a list of stray names (reported 2026-11-21).
+
+       A mark is shown only where there is one to show: Claude Code, Cursor, OpenCode and Hermes have a
+       logo here, Codex and Antigravity do not (OpenAI withdrew its mark from the icon set this repository
+       draws on, and Antigravity has none to redistribute), so those two are named rather than given an
+       invented one. E15.20-6 keeps the two lists in step. -->
+  <section class="agents-row" aria-label="Agent CLIs chief works with">
+    <div class="agents" data-testid="agents">
+      <span class="agents-label">Works with</span>
+      <span class="agent"><img src="assets/logos/claude.svg" alt="" width="20" height="20">Claude Code</span>
+      <span class="agent no-mark">Codex</span>
+      <span class="agent"><img src="assets/logos/cursor.svg" alt="" width="20" height="20">Cursor</span>
+      <span class="agent no-mark">Antigravity</span>
+      <span class="agent"><img src="assets/logos/opencode.svg" alt="" width="20" height="20">OpenCode</span>
+      <span class="agent"><img src="assets/logos/hermes.png" alt="" width="20" height="20">Hermes</span>
+    </div>
   </section>
 
   <!-- ── why ─────────────────────────────────────────────────────────────── -->
@@ -351,10 +362,12 @@
 // third-party script, no request beyond the GitHub release link you choose to press.
 (() => {
   const root = document.documentElement;
+  // Dark is the page's default, so only a choice has to be restored; the attribute is what the stylesheet
+  // switches on, and the button's icon (sun or moon) follows from it in CSS.
   const saved = localStorage.getItem("chief-site-theme");
-  if (saved) root.dataset.theme = saved;
+  if (saved === "light" || saved === "dark") root.dataset.theme = saved;
   document.getElementById("theme").addEventListener("click", () => {
-    const now = getComputedStyle(root).getPropertyValue("--theme-name").trim() || "light";
+    const now = getComputedStyle(root).getPropertyValue("--theme-name").trim() || "dark";
     const next = now === "dark" ? "light" : "dark";
     root.dataset.theme = next;
     localStorage.setItem("chief-site-theme", next);

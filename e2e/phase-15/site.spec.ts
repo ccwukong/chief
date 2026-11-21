@@ -70,10 +70,14 @@ test("E15.20-1 the landing page is self-contained, links a real download, and sa
 
   // Everything the page displays is in the folder, so the site works as a static upload.
   for (const m of html.matchAll(/(?:src|href)="((?!#|https?:)[^"]+)"/g)) {
-    const file = join(out, m[1]);
+    // A `?v=…` query is not part of the path: it is how the page asks for a fresh stylesheet (see below).
+    const file = join(out, m[1].replace(/\?.*$/, ""));
     expect(existsSync(file), `${m[1]} exists`).toBe(true);
     expect(statSync(file).size).toBeGreaterThan(0);
   }
+  // The stylesheet carries the version, so a release's page never arrives over a cached older CSS: that is
+  // what rendered the agent row as bare markup when the page shipped before the stylesheet (2026-11-21).
+  expect(html).toMatch(/href="styles\.css\?v=[\d.]+"/);
   // Every screenshot the README shows is on the page too: one source of truth for the pictures.
   const readme = readFileSync(join(ROOT_DIR, "README.md"), "utf8");
   const shots = [...new Set([...readme.matchAll(/docs\/screenshots\/([a-z-]+\.png)/g)].map((m) => m[1]))];
@@ -232,10 +236,22 @@ test("E15.20-4 the nav is centred on one line, the download chip is readable in 
     const [a, bb] = [lum(rgbOf(getComputedStyle(el).color)), lum({ r, g, b })].sort((x, y) => y - x);
     return +((a + 0.05) / (bb + 0.05)).toFixed(2);
   });
-  expect(await chipContrast(), "the chip in the light theme").toBeGreaterThan(4.5);
-  await page.locator("#theme").click();
-  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
+  // The page opens dark (asked for 2026-11-21), so the first press gives light and the second dark again;
+  // the chip is text on the filled button in both, and it was mint on a lightened mint in the dark.
+  const nowTheme = () => page.evaluate(() => document.documentElement.dataset.theme ?? "dark");
+  const shown = (sel: string) => page.locator(sel).evaluate((el) => getComputedStyle(el).display !== "none");
+  expect(await nowTheme(), "the page opens in the dark theme").toBe("dark");
   expect(await chipContrast(), "the chip in the dark theme").toBeGreaterThan(4.5);
+  await page.locator("#theme").click();
+  await expect.poll(nowTheme).toBe("light");
+  expect(await chipContrast(), "the chip in the light theme").toBeGreaterThan(4.5);
+  // The button says what pressing it gives you: a moon while the page is light, a sun while it is dark.
+  expect(await shown(".theme .icon-moon"), "a moon while it is light").toBe(true);
+  expect(await shown(".theme .icon-sun"), "no sun while it is light").toBe(false);
+  await page.locator("#theme").click();
+  await expect.poll(nowTheme).toBe("dark");
+  expect(await shown(".theme .icon-sun"), "a sun while it is dark").toBe(true);
+  expect(await shown(".theme .icon-moon"), "no moon while it is dark").toBe(false);
 
   // The step names the dialog and the button, so a person who has just seen it knows which one it is.
   const step = page.locator('[data-testid="mode-desktop"] ol li').last();
