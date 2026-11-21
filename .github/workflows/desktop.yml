@@ -1,0 +1,318 @@
+# The macOS app, built when the version in `packages/desktop/package.json` goes up
+# (dev plan §7, 15.16, 15.21, 15.25, 15.26).
+#
+# **The version in the manifest is the decision to ship.** Every push to `main` — a merged pull request
+# and a direct push are the same event — asks one question: is the version there higher than the highest
+# `v*` tag? If it is, that build is a release: this workflow creates the tag `v<version>` on that commit,
+# builds the `.dmg`, verifies it, and publishes it as `chief-<version>-apple-silicon.dmg` on a release
+# for that tag.
+# If it is not, nothing is built and no macOS runner is spent — a README fix, a refactor, a dependency
+# bump that does not change the app's version ships no new download. Raising the version is the whole
+# approval step; there is no separate review gate in this workflow (the `app-release` environment still
+# exists in the repository and is simply unused by it).
+#
+# Not every release is kept: pruning old releases is a manual step, and nothing here deletes one silently.
+# Pruning loses no download count — the `downloads` workflow records each version's highest count in
+# `downloads.json` (task 15.29) — so the order is `gh workflow run downloads`, then
+# `gh release delete <tag> --yes` (see `docs/desktop.md`).
+#
+# No `-latest` anywhere, and no `arm64` in a file name: the file is `chief-<version>-apple-silicon.dmg`,
+# which says both which version it is and which Mac it is for in words a person reads in their Downloads
+# folder.
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    # The download tally commits a counter to `downloads.json` (task 15.29). That commit cannot raise the
+    # version, so it builds nothing; the ignore makes sure it does not even start the decision job.
+    paths-ignore:
+      - downloads.json
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Rebuild this version (e.g. 0.1.0), even if it is not newer. Empty: decide from packages/desktop/package.json."
+        required: false
+
+# One build at a time for a branch; a newer push supersedes a build still running.
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The whole decision, taken before any macOS runner is touched.
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+      tag_exists: ${{ steps.decide.outputs.tag_exists }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tags are the other half of the comparison.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+
+      - name: Compare the manifest's version with the newest tag
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANUAL: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          version="$(node -p 'require("./packages/desktop/package.json").version')"
+          if [ -n "${MANUAL:-}" ]; then version="$MANUAL"; fi
+          tag="v${version}"
+
+          tag_exists=false
+          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then tag_exists=true; fi
+
+          newest="$(git tag --list 'v*' --sort=-v:refname | head -1 || true)"
+          # Semver, component by component, with no dependency: the three numbers decide, and a
+          # pre-release suffix does not make a version bigger than its release.
+          newer="$(node -e '
+            const parse = (v) => String(v).replace(/^v/, "").split("-")[0].split(".").map((n) => parseInt(n, 10) || 0);
+            const [a, b] = process.argv.slice(1).map(parse);
+            for (let i = 0; i < 3; i++) {
+              if ((a[i] || 0) > (b[i] || 0)) { console.log("yes"); process.exit(0); }
+              if ((a[i] || 0) < (b[i] || 0)) { console.log("no"); process.exit(0); }
+            }
+            console.log("same");
+          ' "$version" "${newest:-0.0.0}")"
+
+          # A release for the tag is the real proof that a version shipped: a run that created the tag and
+          # then failed to build leaves the tag behind, and the next push retries it rather than ignoring it.
+          released=false
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" >/dev/null 2>&1; then released=true; fi
+
+          build=false
+          if [ -n "${MANUAL:-}" ]; then
+            build=true
+            reason="manual run for ${version}"
+          elif [ "$newer" = "yes" ]; then
+            build=true
+            reason="packages/desktop/package.json is ${version}, newer than ${newest:-no tag}"
+          elif [ "$tag_exists" = "true" ] && [ "$released" = "false" ]; then
+            build=true
+            reason="${tag} was tagged but has no release: building it again"
+          else
+            reason="packages/desktop/package.json is ${version}; the newest tag is ${newest:-none}, so there is nothing new to build"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          if [ "$build" = "true" ]; then
+            echo "::notice title=Building chief ${version}::${reason}"
+          else
+            echo "::notice title=No new version::${reason}"
+          fi
+          {
+            echo "### $([ "$build" = "true" ] && echo "Building" || echo "Nothing to build")"
+            echo
+            echo "${reason}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The tag the release will hang on. Its own job so `contents: write` is given to nothing else.
+  tag:
+    needs: version
+    if: needs.version.outputs.build == 'true' && needs.version.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag the commit that raised the version
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
+
+  dmg:
+    needs: [version, tag]
+    # `always()` so a skipped tag job (the tag already existed) still lets the build run; the version job
+    # is the one that decides.
+    if: always() && needs.version.outputs.build == 'true' && needs.tag.result != 'failure'
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      # The app reports this version in About and it is in the bundle's Info.plist; it was raised in the
+      # manifest by the commit, so the manifest is the source and nothing is rewritten here.
+      - name: The manifest says what is being built
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual="$(node -p 'require("./packages/desktop/package.json").version')"
+          test "$actual" = "$VERSION" || { echo "::error::packages/desktop/package.json says $actual, not $VERSION"; exit 1; }
+
+      # The download says which Mac it is for in words (`-apple-silicon`), so the runner had better be that
+      # machine. `uname -m` answers `arm64` — the technical name for Apple silicon, the same architecture —
+      # and that comparison is the check; the file is never named after it. `macos-latest` is Apple silicon
+      # today; if that changes, this fails loudly instead of publishing an Intel build labelled Apple
+      # silicon.
+      - name: The runner is Apple silicon
+        run: |
+          test "$(uname -m)" = "arm64" || { echo "::error::macos-latest is $(uname -m); the published .dmg is advertised as being for Apple silicon"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+          cache: npm
+
+      - run: npm ci
+
+      # `npm ci` installs the packages but not always Electron's own binary (npm skips the postinstall of
+      # packages its `allowScripts` does not list). Without it there is nothing to package.
+      - name: Electron binary
+        run: |
+          if [ ! -d node_modules/electron/dist ]; then node node_modules/electron/install.js; fi
+          test -x node_modules/electron/dist/Electron.app/Contents/MacOS/Electron
+
+      # Typecheck, ESLint with --max-warnings 0 and the guardrails: the same three `npm run check` runs on a
+      # laptop (docs/guardrails.md). It does not wait on the `ci` workflow, because a workflow cannot depend
+      # on another workflow's result.
+      - run: npm run check
+
+      - name: Build the app and the .dmg
+        run: npm run build:desktop
+
+      # What a release must be: a bundle macOS starts, with the server inside it, and a .dmg that mounts.
+      - name: Verify the app and the .dmg
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          app=dist/chief.app
+          test -d "$app" || { echo "::error::no dist/chief.app"; exit 1; }
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist")" = "dev.chief.app"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" = "$VERSION"
+          test -f "$app/Contents/Resources/server/chief.mjs"
+          test -d "$app/Contents/Resources/server/migrations"
+          # The licences a distributed copy must carry (task 15.18): generated by the build, so their
+          # absence means the build step or the copy into the app broke.
+          test -f "$app/Contents/Resources/server/LICENSE"
+          test -f "$app/Contents/Resources/server/THIRD-PARTY-NOTICES.md"
+          codesign --verify --deep --strict "$app"
+          codesign -dv "$app" 2>&1 | grep -q "Signature=adhoc"
+          mount=$(mktemp -d)
+          hdiutil attach dist/chief.dmg -mountpoint "$mount" -nobrowse -readonly -quiet
+          test -x "$mount/chief.app/Contents/MacOS/chief"
+          # The volume is an installer, not a folder with one item in it: the shortcut beside the app is
+          # what a person drags chief onto (task 15.31).
+          test -L "$mount/Applications" || { echo "::error::the .dmg has no Applications shortcut"; exit 1; }
+          test "$(readlink "$mount/Applications")" = "/Applications" || { echo "::error::the Applications shortcut does not point at /Applications"; exit 1; }
+          hdiutil detach "$mount" -quiet -force
+          # Named for the version and the Mac it is for, in words: `chief-<version>-apple-silicon.dmg`. The
+          # checksum names the same file, so it still verifies when a person downloads it into any folder.
+          # `arm64` is the machine value `uname -m` compares, not a word for a download.
+          asset="chief-${VERSION}-apple-silicon.dmg"
+          case "$asset" in *arm64*) echo "::error::the download must not be named after the machine's arm64 value"; exit 1;; esac
+          mv dist/chief.dmg "dist/$asset"
+          ( cd dist && shasum -a 256 "$asset" | tee "$asset.sha256" )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chief-dmg-${{ github.sha }}
+          path: |
+            dist/chief-${{ needs.version.outputs.version }}-apple-silicon.dmg
+            dist/chief-${{ needs.version.outputs.version }}-apple-silicon.dmg.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  # The public download (task 15.21). A workflow artifact needs a GitHub login to fetch, so the landing page
+  # cannot link to one; a release asset can be fetched by anyone with the URL.
+  release:
+    needs: [version, dmg]
+    # `always()` for the same reason the `dmg` job has it: a version whose tag already exists skips the `tag`
+    # job, and a skipped job anywhere in the chain suppresses the jobs after it unless the condition opts out
+    # of that status check. Without it this job was silently skipped on the 0.2.1 rebuild — the build had
+    # succeeded and produced the artifact, and nothing was published (2026-11-20). `needs.dmg.result` is the
+    # condition that actually matters: the artifact this job downloads exists only if the build made it.
+    if: always() && needs.version.outputs.build == 'true' && needs.dmg.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: chief-dmg-${{ github.sha }}
+          path: dist
+
+      - name: Check the download
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd dist
+          asset="chief-${VERSION}-apple-silicon.dmg"
+          case "$asset" in *arm64*) echo "::error::the download must not be named after the machine's arm64 value"; exit 1;; esac
+          test -s "$asset"
+          test -s "$asset.sha256"
+          # The checksum names the file it belongs to, so it verifies in whatever folder it was downloaded.
+          grep -q "  $asset\$" "$asset.sha256"
+          shasum -a 256 -c "$asset.sha256"
+          ls -l "$asset"
+
+      # The notes are the version's own section of the changelog, so a release says what changed without
+      # anyone writing it twice. A version with no section yet gets one honest line.
+      - name: Write the release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md || true
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "chief ${VERSION}, built on $(date -u +%Y-%m-%d)." > notes.md
+          fi
+          printf '\nApple silicon, unsigned: see the README for the one-time `xattr` command.\n' >> notes.md
+          cat notes.md
+
+      - name: Publish the release for the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          asset="chief-${VERSION}-apple-silicon.dmg"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "dist/$asset" "dist/$asset.sha256" --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" "dist/$asset" "dist/$asset.sha256" \
+              --title "chief ${VERSION}" --notes-file notes.md
+          fi
+          gh release view "$TAG" --json tagName,assets -q '.tagName, (.assets[].name)'
+          # Old releases are kept until someone removes them on purpose. The download ledger already holds
+          # this version's count (`gh workflow run downloads` refreshes it), so nothing is lost by pruning:
+          # `gh release delete <tag> --yes`.
+          echo "::notice title=Release ${TAG}::Old versions are not pruned automatically, and their download counts are already in downloads.json; delete one with \`gh release delete <tag> --yes\`."

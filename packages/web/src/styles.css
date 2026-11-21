@@ -1,0 +1,525 @@
+@import "tailwindcss";
+
+/*
+ * The type scale (task 15.8). ONE place defines every size the app uses, and the person's choice in
+ * Settings › Appearance multiplies all of them through `--ui-scale`. Nothing sets a size in px, so
+ * prose, fields, code and labels grow and shrink together instead of drifting apart.
+ *
+ *   text-2xs  labels, badges, timestamps     text-sm   body prose and every field
+ *   text-xs   code, hints, table cells       text-lg   section titles
+ *   text-3xl  page titles
+ */
+@theme {
+  /* shadcn's ladder, at shadcn's sizes and line heights: xs 12/16, sm 14/20, base 16/24, lg 18/28, xl 20/28, 2xl 24/32, 3xl 28/36.
+   * `2xs` (11 px) is chief's only addition — the label size under a rail icon — and the one step shadcn has no token for. */
+  --text-2xs: calc(0.6875rem * var(--ui-scale, 1));
+  --text-2xs--line-height: calc(1rem * var(--ui-scale, 1));
+  --text-xs: calc(0.75rem * var(--ui-scale, 1));
+  --text-xs--line-height: calc(1rem * var(--ui-scale, 1));
+  --text-sm: calc(0.875rem * var(--ui-scale, 1));
+  --text-sm--line-height: calc(1.25rem * var(--ui-scale, 1));
+  --text-base: calc(1rem * var(--ui-scale, 1));
+  --text-base--line-height: calc(1.5rem * var(--ui-scale, 1));
+  --text-lg: calc(1.125rem * var(--ui-scale, 1));
+  --text-lg--line-height: calc(1.75rem * var(--ui-scale, 1));
+  --text-xl: calc(1.25rem * var(--ui-scale, 1));
+  --text-xl--line-height: calc(1.75rem * var(--ui-scale, 1));
+  --text-2xl: calc(1.5rem * var(--ui-scale, 1));
+  --text-2xl--line-height: calc(2rem * var(--ui-scale, 1));
+  --text-3xl: calc(1.75rem * var(--ui-scale, 1));
+  --text-3xl--line-height: calc(2.25rem * var(--ui-scale, 1));
+  /* Surfaces, named by what they are for, so a theme is one block of values. */
+  --color-surface: var(--surface);
+  --color-page: var(--page);
+}
+
+:root {
+  --surface: #ffffff;      /* cards, fields, the sidebar and the window */
+  --page: #f6f7f9;         /* behind them */
+  color-scheme: light;
+}
+
+/*
+ * Dark: the neutral ramp is turned around. Tailwind's slate runs from the lightest surface (50) to the
+ * darkest text (900); in the dark theme 50 is the faintest raised surface and 900 the brightest text.
+ * Every `bg-slate-*`, `text-slate-*` and `border-slate-*` in the app follows from this, so no page
+ * needs a `dark:` twin. Red, amber, green, emerald, blue, orange and purple get the same treatment at
+ * the ends only (50–300 become dark tints, 700–900 light text); their middle stays saturated, which is
+ * what a filled button and a border want in either theme.
+ */
+:root[data-theme="dark"] {
+  --surface: #101722;
+  --page: #080c12;
+  color-scheme: dark;
+
+  /* shadcn's dark `primary` is `oklch(0.922 0 0)`, which in the inverted ramp is step 800, not 900: a filled button in
+   * dark mode is a step dimmer than the brightest text, as shadcn draws it (task 15.83). */
+  --primary: var(--color-slate-800);
+
+
+  --color-red-50: #2a1417;
+  --color-red-100: #3a1a1f;
+  --color-red-200: #55242b;
+  --color-red-300: #7f3640;
+  --color-red-700: #fca5a5;
+  --color-red-800: #fecaca;
+  --color-red-900: #fee2e2;
+  --color-red-950: #fff1f1;
+
+  --color-amber-50: #2a1f0b;
+  --color-amber-100: #3a2b0e;
+  --color-amber-200: #553f13;
+  --color-amber-300: #7f6020;
+  --color-amber-500: #f59e0b;
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
+  --color-amber-900: #fef3c7;
+  --color-amber-950: #fffbeb;
+
+  --color-green-50: #0e2417;
+  --color-green-100: #123322;
+  --color-green-200: #1b4a31;
+  --color-green-300: #276b47;
+  --color-green-700: #86efac;
+  --color-green-800: #bbf7d0;
+  --color-green-900: #dcfce7;
+  --color-green-950: #f0fdf4;
+
+  --color-emerald-50: #082a22;
+  --color-emerald-100: #0b3a2f;
+  --color-emerald-200: #115243;
+  --color-emerald-300: #1a7560;
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-950: #ecfdf5;
+  /* Teal is chief's own accent, used by the assistant's schedule card. It was missing from this ramp,
+     so `bg-teal-50` stayed a near-white panel in the dark theme while everything around it was dark. */
+  --color-teal-50: #062a26;
+  --color-teal-100: #083a34;
+  --color-teal-200: #0d524a;
+  --color-teal-300: #14756a;
+  --color-teal-700: #5eead4;
+  --color-teal-800: #99f6e4;
+  --color-teal-900: #ccfbf1;
+  --color-teal-950: #f0fdfa;
+
+  --color-blue-50: #10203a;
+  --color-blue-100: #152b4d;
+  --color-blue-200: #1e3d6b;
+  --color-blue-300: #2b5694;
+  --color-blue-700: #93c5fd;
+  --color-blue-800: #bfdbfe;
+  --color-blue-900: #dbeafe;
+  --color-blue-950: #eff6ff;
+
+  --color-orange-50: #2a1a0b;
+  --color-orange-100: #3a240e;
+  --color-orange-200: #553415;
+  --color-orange-300: #7f4e1f;
+  --color-orange-700: #fdba74;
+  --color-orange-800: #fed7aa;
+  --color-orange-900: #ffedd5;
+  --color-orange-950: #fff7ed;
+
+  --color-sky-50: #0c2233;
+  --color-sky-100: #10293d;
+  --color-sky-700: #7dd3fc;
+  --color-sky-800: #bae6fd;
+
+  --color-purple-50: #1e1530;
+  --color-purple-100: #291d42;
+  --color-purple-200: #3b2a60;
+  --color-purple-300: #57418f;
+  --color-purple-700: #c4b5fd;
+  --color-purple-800: #ddd6fe;
+  --color-purple-900: #ede9fe;
+  --color-purple-950: #f5f3ff;
+}
+/*
+ * The neutral ramp in the five base colours shadcn offers — Neutral, Gray, Slate, Stone, Zinc (task 15.82).
+ *
+ * The token keeps the name `slate` because every class in the app is written against it (`bg-slate-100`,
+ * `text-slate-600`): the slot is "the neutral ramp" and `[data-base]` decides its values. Renaming the token would
+ * mean renaming 200 classes to buy what this comment already says.
+ *
+ * **Light** is Tailwind's own values for each family. **Dark** keeps the lightness of chief's tuned dark ladder and
+ * takes only the family's hue and a share of its chroma — so every contrast ratio the dark theme was tuned for
+ * survives a change of base colour, which is the whole risk of offering the choice.
+ */
+:root,
+[data-theme="light"][data-base="neutral"] {
+  --surface: #ffffff;
+  --page: oklch(97.6% 0 none);
+  --color-slate-50: oklch(98.5% 0 none);
+  --color-slate-100: oklch(97% 0 none);
+  --color-slate-200: oklch(92.2% 0 none);
+  --color-slate-300: oklch(87% 0 none);
+  --color-slate-400: oklch(70.8% 0 none);
+  --color-slate-500: oklch(55.6% 0 none);
+  --color-slate-600: oklch(43.9% 0 none);
+  --color-slate-700: oklch(37.1% 0 none);
+  --color-slate-800: oklch(26.9% 0 none);
+  --color-slate-900: oklch(20.5% 0 none);
+  --color-slate-950: oklch(14.5% 0 none);
+}
+
+[data-theme="light"][data-base="gray"] {
+  --surface: #ffffff;
+  --page: oklch(97.6% 0.0016 260.0);
+  --color-slate-50: oklch(98.5% 0.002 247.839);
+  --color-slate-100: oklch(96.7% 0.003 264.542);
+  --color-slate-200: oklch(92.8% 0.006 264.531);
+  --color-slate-300: oklch(87.2% 0.01 258.338);
+  --color-slate-400: oklch(70.7% 0.022 261.325);
+  --color-slate-500: oklch(55.1% 0.027 264.364);
+  --color-slate-600: oklch(44.6% 0.03 256.802);
+  --color-slate-700: oklch(37.3% 0.034 259.733);
+  --color-slate-800: oklch(27.8% 0.033 256.848);
+  --color-slate-900: oklch(21% 0.034 264.665);
+  --color-slate-950: oklch(13% 0.028 261.692);
+}
+
+[data-theme="light"][data-base="slate"] {
+  --surface: #ffffff;
+  --page: oklch(97.6% 0.0029 264.5);
+  --color-slate-50: oklch(98.4% 0.003 247.858);
+  --color-slate-100: oklch(96.8% 0.007 247.896);
+  --color-slate-200: oklch(92.9% 0.013 255.508);
+  --color-slate-300: oklch(86.9% 0.022 252.894);
+  --color-slate-400: oklch(70.4% 0.04 256.788);
+  --color-slate-500: oklch(55.4% 0.046 257.417);
+  --color-slate-600: oklch(44.6% 0.043 257.281);
+  --color-slate-700: oklch(37.2% 0.044 257.287);
+  --color-slate-800: oklch(27.9% 0.041 260.031);
+  --color-slate-900: oklch(20.8% 0.042 265.755);
+  --color-slate-950: oklch(12.9% 0.042 264.695);
+}
+
+[data-theme="light"][data-base="stone"] {
+  --surface: #ffffff;
+  --page: oklch(97.6% 0.0033 50.0);
+  --color-slate-50: oklch(98.5% 0.001 106.423);
+  --color-slate-100: oklch(97% 0.001 106.424);
+  --color-slate-200: oklch(92.3% 0.003 48.717);
+  --color-slate-300: oklch(86.9% 0.005 56.366);
+  --color-slate-400: oklch(70.9% 0.01 56.259);
+  --color-slate-500: oklch(55.3% 0.013 58.071);
+  --color-slate-600: oklch(44.4% 0.011 73.639);
+  --color-slate-700: oklch(37.4% 0.01 67.558);
+  --color-slate-800: oklch(26.8% 0.007 34.298);
+  --color-slate-900: oklch(21.6% 0.006 56.043);
+  --color-slate-950: oklch(14.7% 0.004 49.25);
+}
+
+[data-theme="light"][data-base="zinc"] {
+  --surface: #ffffff;
+  --page: oklch(97.6% 0.0027 286.0);
+  --color-slate-50: oklch(98.5% 0 none);
+  --color-slate-100: oklch(96.7% 0.001 286.375);
+  --color-slate-200: oklch(92% 0.004 286.32);
+  --color-slate-300: oklch(87.1% 0.006 286.286);
+  --color-slate-400: oklch(70.5% 0.015 286.067);
+  --color-slate-500: oklch(55.2% 0.016 285.938);
+  --color-slate-600: oklch(44.2% 0.017 285.786);
+  --color-slate-700: oklch(37% 0.013 285.805);
+  --color-slate-800: oklch(27.4% 0.006 286.033);
+  --color-slate-900: oklch(21% 0.006 285.885);
+  --color-slate-950: oklch(14.1% 0.005 285.823);
+}
+
+[data-theme="dark"][data-base="neutral"] {
+  --surface: oklch(20.3% 0 none);
+  --page: oklch(15.3% 0 none);
+  --color-slate-50: oklch(22.8% 0 none);
+  --color-slate-100: oklch(25.7% 0 none);
+  --color-slate-200: oklch(30.5% 0 none);
+  --color-slate-300: oklch(37.2% 0 none);
+  --color-slate-400: oklch(63.2% 0 none);
+  --color-slate-500: oklch(67.5% 0 none);
+  --color-slate-600: oklch(77.2% 0 none);
+  --color-slate-700: oklch(86.0% 0 none);
+  --color-slate-800: oklch(92.9% 0 none);
+  --color-slate-900: oklch(96.8% 0 none);
+  --color-slate-950: oklch(98.4% 0 none);
+}
+
+[data-theme="dark"][data-base="gray"] {
+  --surface: oklch(20.3% 0.0135 260.0);
+  --page: oklch(15.3% 0.0080 260.0);
+  --color-slate-50: oklch(22.8% 0.0148 260.0);
+  --color-slate-100: oklch(25.7% 0.0157 260.0);
+  --color-slate-200: oklch(30.5% 0.0175 260.0);
+  --color-slate-300: oklch(37.2% 0.0215 260.0);
+  --color-slate-400: oklch(63.2% 0.0181 260.0);
+  --color-slate-500: oklch(67.5% 0.0168 260.0);
+  --color-slate-600: oklch(77.2% 0.0139 260.0);
+  --color-slate-700: oklch(86.0% 0.0109 260.0);
+  --color-slate-800: oklch(92.9% 0.0069 260.0);
+  --color-slate-900: oklch(96.8% 0.0038 260.0);
+  --color-slate-950: oklch(98.4% 0.0019 260.0);
+}
+
+[data-theme="dark"][data-base="slate"] {
+  --surface: oklch(20.3% 0.0246 259.3);
+  --page: oklch(15.3% 0.0146 257.6);
+  --color-slate-50: oklch(22.8% 0.0269 255.8);
+  --color-slate-100: oklch(25.7% 0.0285 255.2);
+  --color-slate-200: oklch(30.5% 0.0318 254.3);
+  --color-slate-300: oklch(37.2% 0.0392 257.3);
+  --color-slate-400: oklch(63.2% 0.0330 256.1);
+  --color-slate-500: oklch(67.5% 0.0306 256.5);
+  --color-slate-600: oklch(77.2% 0.0253 254.0);
+  --color-slate-700: oklch(86.0% 0.0199 252.9);
+  --color-slate-800: oklch(92.9% 0.0126 255.5);
+  --color-slate-900: oklch(96.8% 0.0069 247.9);
+  --color-slate-950: oklch(98.4% 0.0034 247.9);
+}
+
+[data-theme="dark"][data-base="stone"] {
+  --surface: oklch(20.3% 0.0283 50.0);
+  --page: oklch(15.3% 0.0168 50.0);
+  --color-slate-50: oklch(22.8% 0.0310 50.0);
+  --color-slate-100: oklch(25.7% 0.0328 50.0);
+  --color-slate-200: oklch(30.5% 0.0366 50.0);
+  --color-slate-300: oklch(37.2% 0.0450 50.0);
+  --color-slate-400: oklch(63.2% 0.0379 50.0);
+  --color-slate-500: oklch(67.5% 0.0351 50.0);
+  --color-slate-600: oklch(77.2% 0.0291 50.0);
+  --color-slate-700: oklch(86.0% 0.0229 50.0);
+  --color-slate-800: oklch(92.9% 0.0145 50.0);
+  --color-slate-900: oklch(96.8% 0.0079 50.0);
+  --color-slate-950: oklch(98.4% 0.0039 50.0);
+}
+
+[data-theme="dark"][data-base="zinc"] {
+  --surface: oklch(20.3% 0.0233 286.0);
+  --page: oklch(15.3% 0.0139 286.0);
+  --color-slate-50: oklch(22.8% 0.0256 286.0);
+  --color-slate-100: oklch(25.7% 0.0271 286.0);
+  --color-slate-200: oklch(30.5% 0.0302 286.0);
+  --color-slate-300: oklch(37.2% 0.0372 286.0);
+  --color-slate-400: oklch(63.2% 0.0313 286.0);
+  --color-slate-500: oklch(67.5% 0.0290 286.0);
+  --color-slate-600: oklch(77.2% 0.0240 286.0);
+  --color-slate-700: oklch(86.0% 0.0189 286.0);
+  --color-slate-800: oklch(92.9% 0.0120 286.0);
+  --color-slate-900: oklch(96.8% 0.0065 286.0);
+  --color-slate-950: oklch(98.4% 0.0032 286.0);
+}
+
+/*
+ * shadcn/ui's token names, mapped onto chief's own (task 15.68).
+ *
+ * shadcn components are written against `--background`, `--foreground`, `--primary`, `--muted`, … . Rather than
+ * define the palette a second time — two layers that drift, which E15.8-3 exists to catch — every alias below points
+ * at the chief token that already flips with the theme. A component pasted from shadcn therefore inherits chief's
+ * light and dark themes unchanged, and a colour is still chosen in exactly one place.
+ *
+ * `accent` is shadcn's *hover surface*, which is why chief's brand colour is `brand` above: the two meanings cannot
+ * share a name, and shadcn's is the one written into every component it ships.
+ */
+@theme inline {
+  /* shadcn's radius scale, derived from `--radius` like its components expect: `rounded-md` is 8 px, not 6. */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+/*
+ * shadcn's semantic tokens, at shadcn's values.
+ *
+ * `--primary` is not a brand colour in shadcn: it is the **neutral fill** a default Button uses — `oklch(0.205 0 0)` in
+ * light, `oklch(0.922 0 0)` in dark. chief had put its own blue there, so every primary button was a tone shadcn never
+ * draws. These map to the neutral ramp instead, which *is* those values for each base colour — neutral-900 is exactly
+ * `oklch(0.205 0 0)` — so a button is shadcn's button in all five schemes (task 15.83).
+ *
+ * The ramp inverts between themes, which makes one mapping serve both: `slate-900` is near-black in light and near-white
+ * in dark, exactly like shadcn's `primary`.
+ */
+:root {
+  --radius: 0.625rem;
+  /* The shipped text size, declared here as well as applied by `theme.ts`: `--ui-scale` is written inline on `<html>` when
+   * the setting arrives, and this is what the app renders at if it never does — the size it is meant to ship at, not one
+   * step above it (task 15.84). */
+  --ui-scale: 0.9;
+  --background: var(--surface);
+  --foreground: var(--color-slate-800);
+  --card: var(--surface);
+  --card-foreground: var(--color-slate-800);
+  --popover: var(--surface);
+  --popover-foreground: var(--color-slate-800);
+  --primary: var(--color-slate-900);
+  --primary-foreground: var(--color-slate-50);
+  --secondary: var(--color-slate-100);
+  --secondary-foreground: var(--color-slate-900);
+  --muted: var(--color-slate-100);
+  --muted-foreground: var(--color-slate-500);
+  /* shadcn's accent is a quiet hover surface, not a colour of its own. */
+  --accent: var(--color-slate-100);
+  --accent-foreground: var(--color-slate-900);
+  --destructive: var(--color-red-600);
+  --destructive-foreground: #ffffff;
+  --border: var(--color-slate-200);
+  --input: var(--color-slate-200);
+  --ring: var(--color-slate-400);
+}
+
+
+
+html, body, #root { height: 100%; }
+/*
+ * shadcn's typeface: **Geist Sans** and **Geist Mono**, from the `geist` package, self-hosted in `public/fonts` (task
+ * 15.83). Four files, 196 KB: three weights of the sans and one of the mono. Self-hosted rather than linked, because
+ * chief runs offline and the landing page promises no request it does not have to make.
+ *
+ * `font-display: swap`, so the first paint is in the system's font and the text never waits for a file.
+ */
+@font-face { font-family: "Geist"; src: url("/fonts/Geist-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/Geist-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/Geist-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/fonts/GeistMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+
+/*
+ * The family is a token so a component can ask for it by name (`font-sans`, `font-mono`), which is how shadcn's own
+ * components expect to find it.
+ */
+@theme {
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+body { font-family: var(--font-sans); font-size: var(--text-sm); color: var(--color-slate-700); background: var(--page); }
+
+/*
+ * The caret of a fold (`<details>` in the designer's server list). A plain rule rather than a utility:
+ * the utility form did not apply, and a caret that never turns is a second lie about whether the list can
+ * be folded. It turns when open, and animates without being asked to run a timer.
+ */
+.caret { transform: rotate(0deg); transition: transform .12s ease; }
+details[open] > summary .caret { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .caret { transition: none; } }
+
+@layer components {
+  /*
+   * The remaining class-only controls, drawn to shadcn's spec (task 15.72).
+   *
+   * Most of the app is on the shadcn components now (`components/ui/*`). These four classes survive where a control is
+   * built imperatively — `AsyncButton` wraps whatever it is given, the MCP command box is a textarea inside a style, a
+   * `div` that nests cannot be turned into `<Card>` mechanically — and they must look identical to the components or the
+   * design system has two answers again. So they carry the same tokens, heights, radii and focus rings as the shadcn
+   * components beside them; a change to one is a change to both.
+   */
+  .btn { @apply inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50; }
+  .btn-primary { @apply border-primary bg-primary text-primary-foreground hover:bg-primary/90; }
+  .btn-danger { @apply border-red-600 bg-background text-red-700 hover:bg-red-50; }
+  .input { @apply h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm text-foreground shadow-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60; }
+  /*
+   * A field's caption. It was 11 px; 12 is the floor for something a person has to read, and settings is mostly these,
+   * which is why that page read smaller than the pages that are mostly prose (asked 2026-11-22: "the small font size on
+   * the settings page should be the default font size"). One step for every label in the app, so the pages match.
+   */
+  .label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground; }
+  .card { @apply rounded-lg border border-border bg-card p-4 text-card-foreground shadow-xs; }
+  /* The content column of every page, next to the sidebar: wide, with a cap for very large screens. */
+  .page-width { @apply mx-auto w-full max-w-[1760px] px-4 sm:px-6; }
+  .mono { font-family: var(--font-mono); }
+
+  /* Markdown shown formatted (what agents write, prompts). */
+  .md { @apply leading-relaxed text-slate-800; overflow-wrap: anywhere; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md h1 { @apply mb-2 mt-4 text-lg font-semibold; }
+  .md h2 { @apply mb-2 mt-4 text-base font-semibold; }
+  .md h3, .md h4, .md h5, .md h6 { @apply mb-1 mt-3 text-sm font-semibold; }
+  .md p { @apply my-2; }
+  .md ul { @apply my-2 list-disc pl-5; }
+  .md ol { @apply my-2 list-decimal pl-5; }
+  .md li { @apply my-0.5; }
+  .md li > ul, .md li > ol { @apply my-0.5; }
+  .md ul.contains-task-list { @apply list-none pl-1; }
+  .md a { @apply text-blue-700 underline; }
+  .md strong { @apply font-semibold; }
+  .md blockquote { @apply my-2 border-l-4 border-slate-200 pl-3 text-slate-600; }
+  .md code { @apply rounded bg-slate-100 px-1 py-0.5 text-[0.85em]; font-family: var(--font-mono); }
+  .md pre { @apply my-2 overflow-x-auto rounded bg-slate-50 p-2 text-xs; }
+  .md pre code { @apply bg-transparent p-0; }
+  .md table { @apply my-2 block overflow-x-auto border-collapse text-xs; }
+  .md th, .md td { @apply border border-slate-200 px-2 py-1 text-left align-top; }
+  .md th { @apply bg-slate-50 font-semibold; }
+  .md hr { @apply my-3 border-slate-200; }
+}
+
+/* A panel that slides in from the right edge (the designer's "New workflow"). */
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: none; } }
+.slide-in-right { animation: slide-in-right 0.2s ease-out; }
+@keyframes slide-out-right { from { transform: none; } to { transform: translateX(100%); } }
+.slide-out-right { animation: slide-out-right 0.2s ease-in forwards; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .slide-in-right, .slide-out-right { animation-duration: 1ms; } }
+
+/* Everything that can be clicked shows the hand; what cannot be used right now shows "not allowed". */
+button, a[href], select, summary, label:has(input[type="checkbox"]), label:has(input[type="radio"]),
+/*
+ * Everything that acts when clicked shows the hand. `[role="checkbox"]`, `"radio"` and `"tab"` are in the list because
+ * a Radix control is a <button> with one of those roles, not a native input — without them a shadcn checkbox showed the
+ * arrow while a native one showed the hand (found 2026-11-22 by E9.18-1, which asserts exactly this).
+ */
+input[type="checkbox"], input[type="radio"], input[type="file"], button, [role="button"], [role="checkbox"], [role="radio"], [role="tab"], [role="switch"], [role="menuitem"], .clickable { cursor: pointer; }
+/* A label around a tick box is clickable too: it toggles the control it wraps. */
+label:has(input[type="checkbox"]), label:has(input[type="radio"]), label:has([role="checkbox"]), label:has([role="radio"]), label:has(select) { cursor: pointer; }
+button:disabled, select:disabled, input:disabled, label:has(input:disabled), label:has([data-disabled]), [aria-disabled="true"] { cursor: not-allowed; }
+/* A button whose action is under way shows its spinner at full strength, with the "working" cursor. */
+button[aria-busy="true"] { cursor: progress; opacity: 1; }
+
+/* The run diagram: the step in progress pulses; the arrow into it moves (React Flow's `animated`). */
+@keyframes chief-pulse-blue { 0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55); } 60% { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); } }
+@keyframes chief-pulse-amber { 0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.55); } 60% { box-shadow: 0 0 0 10px rgba(217, 119, 6, 0); } }
+.diagram-running { animation: chief-pulse-blue 1.4s ease-out infinite; }
+.diagram-waiting { animation: chief-pulse-amber 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .diagram-running, .diagram-waiting, .react-flow__edge.animated path { animation: none; }
+}
+
+
+
+/*
+ * Thin scrollbars, the way an editor draws them.
+ *
+ * Nothing set these before, so every scrolling box in the app (the designer's block column, the run
+ * record, JSON output, the assistant) got the platform's: about 15 px wide, opaque, with a visible track
+ * and arrow gutter — which takes a sixth of the designer's 224 px column and reads as furniture
+ * (reported 2026-11-21: "this scrolling bar is thick").
+ *
+ * `scrollbar-width: thin` and `scrollbar-color` are the standard forms. Chrome ignores
+ * `::-webkit-scrollbar` once `scrollbar-width` is set, so the WebKit rules below serve Safari and older
+ * Chromium; neither can be dropped without losing one of them. The thumb is slate at 45% so it is visible
+ * on the light and the dark surface, and the track is transparent so a scrollbar does not look like a
+ * panel divider.
+ */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--color-slate-500) 45%, transparent) transparent; }
+/* Firefox and Safari honour the two lines above; this is the gutter width where the pseudo-elements apply. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color-slate-500) 45%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color-slate-600) 70%, transparent); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+

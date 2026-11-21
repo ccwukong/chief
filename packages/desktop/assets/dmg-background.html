@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>chief — drag to Applications</title>
+<!--
+  The installer's window, drawn at the size Finder opens it: 600×400 points, which is `WINDOW` in
+  `scripts/build.ts` (and 170,190 / 460,190 for the two icons, 128 pt each). Nothing here needs to
+  line up pixel by pixel with Finder — the icons are drawn by Finder, not by this page — but the
+  empty space must be empty where they go, and the words must stay clear of them.
+
+  Rendered to `assets/dmg-background.png` by `scripts/render-dmg-background.ts` at 2× (1200×800).
+  Edit this file, not the PNG.
+-->
+<style>
+  html, body {
+    margin: 0;
+    width: 600px;
+    height: 400px;
+    overflow: hidden;
+    background: #f6f7f9;
+    color: #1c2430;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* The top strip only: the icons sit at y=190 and are 128 pt tall, so they reach up to y=126. */
+  .hint {
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    top: 46px;
+    text-align: center;
+  }
+  .hint b {
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  .hint span {
+    display: block;
+    margin-top: 8px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: #75808f;
+  }
+  /* Between the two icons, and level with them: chief ends at 234, Applications starts at 396. */
+  .arrow {
+    position: absolute;
+    left: 252px;
+    top: 174px;
+    width: 120px;
+    height: 32px;
+  }
+</style>
+</head>
+<body>
+  <div class="hint">
+    <b>Drag chief into Applications</b>
+    <span>then open it from Launchpad, or from Applications in the sidebar</span>
+  </div>
+  <svg class="arrow" viewBox="0 0 120 32" fill="none" aria-hidden="true">
+    <path d="M3 16h100" stroke="#b3bdcb" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M94 6.5 105 16l-11 9.5" stroke="#b3bdcb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</body>
+</html>
