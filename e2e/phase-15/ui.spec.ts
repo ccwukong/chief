@@ -410,7 +410,8 @@ test("E15.33-1 the run page says the totals are tokens, on one line at 375 px", 
     // One line, and the header does not push the run page sideways on a phone.
     await page.setViewportSize({ width: 375, height: 800 });
     await expect(tid(page, "run-status")).toHaveText("completed");
-    expect((await tid(page, "run-totals").boundingBox())!.height).toBeLessThan(30);
+    await expect(tid(page, "run-totals")).toHaveCSS("white-space", "nowrap");
+    await expect.poll(async () => (await tid(page, "run-totals").boundingBox())?.height ?? 0).toBeLessThan(30);
     const overflow = await page.evaluate(() => {
       const main = document.querySelector('[data-testid="page-runs"]') as HTMLElement;
       return { doc: document.documentElement.scrollWidth, main: main.scrollWidth - main.clientWidth };
