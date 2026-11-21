@@ -1,0 +1,74 @@
+# Daily triage that starts from Slack.
+# The entry node is just a node: daily-github.yaml and daily-jira.yaml start elsewhere.
+name: daily-slack
+description: Summarise the last day of Slack, pick what to act on, do it, collect feedback.
+agent: claude-code
+budget: { warn-usd: 2.00, max-usd: 4.00 }
+inputs:
+  lookback-hours: 24
+  carry-over: null        # filled in when the previous run was restarted from the feedback gate
+
+nodes:
+  - id: plan
+    type: agent
+    mcp: [slack]
+    model: sonnet
+    prompt: |
+      Read only. Do not post, react or change anything.
+
+      Summarise what happened in my Slack in the last {{inputs.lookback-hours}} hours:
+      direct messages, mentions, and threads I took part in.
+      Then list the action items for me. For each: a short title, a kind
+      (code-review | doc | jira | other), a priority (P0 most urgent to P3), and the source URL.
+
+      Also consider what is still open from before:
+      - carried over from the previous run: {{inputs.carry-over}}
+      Include those that are still relevant, without duplicates.
+    output-schema:
+      summary: string
+      items: [{ title: string, kind: string, priority: string, url }]
+
+  - id: choose
+    type: gate
+    kind: select
+    message: Which of these do you want to handle now?
+    from: "{{nodes.plan.output.items}}"
+    modes: [all, by-priority, one-by-one]
+
+  - id: act
+    type: map
+    over: "{{nodes.choose.output.selected}}"
+    mode: "{{nodes.choose.output.mode}}"      # sequential | parallel, from the gate
+    max-parallel: 3
+    on-error: continue
+    node:
+      type: agent
+      mcp: [github, atlassian, google-drive]
+      prompt: |
+        Action item: {{item}}
+
+        Handle it according to its kind:
+        - code-review: fetch the pull request with the GitHub tools and review it. Do NOT post the
+          review. Ask first (needs_input) with the full review text as the proposal.
+        - doc: draft the ADR or RFC as a new Google Doc. Do not share it with anyone.
+        - jira: read the ticket and propose the update. Ask first (needs_input) before changing it.
+        - other: write a short recommendation of what I should do. Change nothing.
+
+        Report every write you performed in side_effects.
+      output-schema: { result: string }
+      compensate:
+        prompt: |
+          Undo these side effects where possible, using how_to_undo as a guide:
+          {{output.side_effects}}
+
+  - id: feedback
+    type: gate
+    kind: input
+    message: Anything to change? "restart" plans again with what is left.
+    summary: "{{nodes.act.output}}"
+    options: [done, restart]
+
+edges:
+  - plan -> choose
+  - choose -> act
+  - act -> feedback

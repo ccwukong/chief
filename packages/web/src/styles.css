@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+/*
+ * The type scale (task 15.8). ONE place defines every size the app uses, and the person's choice in
+ * Settings › Appearance multiplies all of them through `--ui-scale`. Nothing sets a size in px, so
+ * prose, fields, code and labels grow and shrink together instead of drifting apart.
+ *
+ *   text-2xs  labels, badges, timestamps     text-sm   body prose and every field
+ *   text-xs   code, hints, table cells       text-lg   section titles
+ *   text-3xl  page titles
+ */
+@theme {
+  --text-2xs: calc(0.6875rem * var(--ui-scale, 1));
+  --text-2xs--line-height: calc(1rem * var(--ui-scale, 1));
+  --text-xs: calc(0.75rem * var(--ui-scale, 1));
+  --text-xs--line-height: calc(1.125rem * var(--ui-scale, 1));
+  --text-sm: calc(0.875rem * var(--ui-scale, 1));
+  --text-sm--line-height: calc(1.3125rem * var(--ui-scale, 1));
+  --text-base: calc(1rem * var(--ui-scale, 1));
+  --text-base--line-height: calc(1.5rem * var(--ui-scale, 1));
+  --text-lg: calc(1.125rem * var(--ui-scale, 1));
+  --text-lg--line-height: calc(1.75rem * var(--ui-scale, 1));
+  --text-xl: calc(1.25rem * var(--ui-scale, 1));
+  --text-xl--line-height: calc(1.75rem * var(--ui-scale, 1));
+  --text-2xl: calc(1.5rem * var(--ui-scale, 1));
+  --text-2xl--line-height: calc(2rem * var(--ui-scale, 1));
+  --text-3xl: calc(1.75rem * var(--ui-scale, 1));
+  --text-3xl--line-height: calc(2.25rem * var(--ui-scale, 1));
+  /* Surfaces and accents, named by what they are for, so a theme is one block of values. */
+  --color-surface: var(--surface);
+  --color-page: var(--page);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+}
+
+:root {
+  --ui-scale: 1;
+  --surface: #ffffff;      /* cards, fields, the sidebar and the window */
+  --page: #f6f7f9;         /* behind them */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  color-scheme: light;
+}
+
+/*
+ * Dark: the neutral ramp is turned around. Tailwind's slate runs from the lightest surface (50) to the
+ * darkest text (900); in the dark theme 50 is the faintest raised surface and 900 the brightest text.
+ * Every `bg-slate-*`, `text-slate-*` and `border-slate-*` in the app follows from this, so no page
+ * needs a `dark:` twin. Red, amber, green, emerald, blue, orange and purple get the same treatment at
+ * the ends only (50–300 become dark tints, 700–900 light text); their middle stays saturated, which is
+ * what a filled button and a border want in either theme.
+ */
+[data-theme="dark"] {
+  --surface: #101722;
+  --page: #080c12;
+  /* The accent stays the same filled blue: white text on it is 5.2:1. Links and emphasis use the
+     lighter `blue-700` of the dark ramp, which is what `text-blue-700` resolves to. */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  color-scheme: dark;
+
+  --color-slate-50: #141d29;
+  --color-slate-100: #1a2431;
+  --color-slate-200: #24303f;
+  --color-slate-300: #334155;
+  --color-slate-400: #7d8b9e;
+  --color-slate-500: #8b98aa;
+  --color-slate-600: #aab6c5;
+  --color-slate-700: #c8d2de;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;
+  --color-slate-950: #f8fafc;
+
+  --color-red-50: #2a1417;
+  --color-red-100: #3a1a1f;
+  --color-red-200: #55242b;
+  --color-red-300: #7f3640;
+  --color-red-700: #fca5a5;
+  --color-red-800: #fecaca;
+  --color-red-900: #fee2e2;
+  --color-red-950: #fff1f1;
+
+  --color-amber-50: #2a1f0b;
+  --color-amber-100: #3a2b0e;
+  --color-amber-200: #553f13;
+  --color-amber-300: #7f6020;
+  --color-amber-500: #f59e0b;
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
+  --color-amber-900: #fef3c7;
+  --color-amber-950: #fffbeb;
+
+  --color-green-50: #0e2417;
+  --color-green-100: #123322;
+  --color-green-200: #1b4a31;
+  --color-green-300: #276b47;
+  --color-green-700: #86efac;
+  --color-green-800: #bbf7d0;
+  --color-green-900: #dcfce7;
+  --color-green-950: #f0fdf4;
+
+  --color-emerald-50: #082a22;
+  --color-emerald-100: #0b3a2f;
+  --color-emerald-200: #115243;
+  --color-emerald-300: #1a7560;
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-950: #ecfdf5;
+  /* Teal is chief's own accent, used by the assistant's schedule card. It was missing from this ramp,
+     so `bg-teal-50` stayed a near-white panel in the dark theme while everything around it was dark. */
+  --color-teal-50: #062a26;
+  --color-teal-100: #083a34;
+  --color-teal-200: #0d524a;
+  --color-teal-300: #14756a;
+  --color-teal-700: #5eead4;
+  --color-teal-800: #99f6e4;
+  --color-teal-900: #ccfbf1;
+  --color-teal-950: #f0fdfa;
+
+  --color-blue-50: #10203a;
+  --color-blue-100: #152b4d;
+  --color-blue-200: #1e3d6b;
+  --color-blue-300: #2b5694;
+  --color-blue-700: #93c5fd;
+  --color-blue-800: #bfdbfe;
+  --color-blue-900: #dbeafe;
+  --color-blue-950: #eff6ff;
+
+  --color-orange-50: #2a1a0b;
+  --color-orange-100: #3a240e;
+  --color-orange-200: #553415;
+  --color-orange-300: #7f4e1f;
+  --color-orange-700: #fdba74;
+  --color-orange-800: #fed7aa;
+  --color-orange-900: #ffedd5;
+  --color-orange-950: #fff7ed;
+
+  --color-sky-50: #0c2233;
+  --color-sky-100: #10293d;
+  --color-sky-700: #7dd3fc;
+  --color-sky-800: #bae6fd;
+
+  --color-purple-50: #1e1530;
+  --color-purple-100: #291d42;
+  --color-purple-200: #3b2a60;
+  --color-purple-300: #57418f;
+  --color-purple-700: #c4b5fd;
+  --color-purple-800: #ddd6fe;
+  --color-purple-900: #ede9fe;
+  --color-purple-950: #f5f3ff;
+}
+
+html, body, #root { height: 100%; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: var(--text-sm); color: var(--color-slate-700); background: var(--page); }
+
+/*
+ * The caret of a fold (`<details>` in the designer's server list). A plain rule rather than a utility:
+ * the utility form did not apply, and a caret that never turns is a second lie about whether the list can
+ * be folded. It turns when open, and animates without being asked to run a timer.
+ */
+.caret { transform: rotate(0deg); transition: transform .12s ease; }
+details[open] > summary .caret { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .caret { transition: none; } }
+
+@layer components {
+  .btn { @apply inline-flex items-center rounded border border-slate-300 bg-surface px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40; }
+  .btn-primary { @apply border-accent bg-accent text-white hover:bg-accent-hover hover:border-accent-hover; }
+  .btn-danger { @apply border-red-600 bg-surface text-red-700 hover:bg-red-50; }
+  .input { @apply w-full rounded border border-slate-300 bg-surface px-2 py-1 text-sm; }
+  .label { @apply mb-1 block text-2xs font-semibold uppercase tracking-wide text-slate-500; }
+  .card { @apply rounded border border-slate-200 bg-surface p-4; }
+  /* The content column of every page, next to the sidebar: wide, with a cap for very large screens. */
+  .page-width { @apply mx-auto w-full max-w-[1760px] px-4 sm:px-6; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* Markdown shown formatted (what agents write, prompts). */
+  .md { @apply leading-relaxed text-slate-800; overflow-wrap: anywhere; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md h1 { @apply mb-2 mt-4 text-lg font-semibold; }
+  .md h2 { @apply mb-2 mt-4 text-base font-semibold; }
+  .md h3, .md h4, .md h5, .md h6 { @apply mb-1 mt-3 text-sm font-semibold; }
+  .md p { @apply my-2; }
+  .md ul { @apply my-2 list-disc pl-5; }
+  .md ol { @apply my-2 list-decimal pl-5; }
+  .md li { @apply my-0.5; }
+  .md li > ul, .md li > ol { @apply my-0.5; }
+  .md ul.contains-task-list { @apply list-none pl-1; }
+  .md a { @apply text-blue-700 underline; }
+  .md strong { @apply font-semibold; }
+  .md blockquote { @apply my-2 border-l-4 border-slate-200 pl-3 text-slate-600; }
+  .md code { @apply rounded bg-slate-100 px-1 py-0.5 text-[0.85em]; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .md pre { @apply my-2 overflow-x-auto rounded bg-slate-50 p-2 text-xs; }
+  .md pre code { @apply bg-transparent p-0; }
+  .md table { @apply my-2 block overflow-x-auto border-collapse text-xs; }
+  .md th, .md td { @apply border border-slate-200 px-2 py-1 text-left align-top; }
+  .md th { @apply bg-slate-50 font-semibold; }
+  .md hr { @apply my-3 border-slate-200; }
+}
+
+/* A panel that slides in from the right edge (the designer's "New workflow"). */
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: none; } }
+.slide-in-right { animation: slide-in-right 0.2s ease-out; }
+@keyframes slide-out-right { from { transform: none; } to { transform: translateX(100%); } }
+.slide-out-right { animation: slide-out-right 0.2s ease-in forwards; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .slide-in-right, .slide-out-right { animation-duration: 1ms; } }
+
+/* Everything that can be clicked shows the hand; what cannot be used right now shows "not allowed". */
+button, a[href], select, summary, label:has(input[type="checkbox"]), label:has(input[type="radio"]),
+input[type="checkbox"], input[type="radio"], input[type="file"], [role="button"], .clickable { cursor: pointer; }
+button:disabled, select:disabled, input:disabled, label:has(input:disabled), [aria-disabled="true"] { cursor: not-allowed; }
+/* A button whose action is under way shows its spinner at full strength, with the "working" cursor. */
+button[aria-busy="true"] { cursor: progress; opacity: 1; }
+
+/* The run diagram: the step in progress pulses; the arrow into it moves (React Flow's `animated`). */
+@keyframes chief-pulse-blue { 0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55); } 60% { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); } }
+@keyframes chief-pulse-amber { 0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.55); } 60% { box-shadow: 0 0 0 10px rgba(217, 119, 6, 0); } }
+.diagram-running { animation: chief-pulse-blue 1.4s ease-out infinite; }
+.diagram-waiting { animation: chief-pulse-amber 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .diagram-running, .diagram-waiting, .react-flow__edge.animated path { animation: none; }
+}
+
+/*
+ * Thin scrollbars, the way an editor draws them.
+ *
+ * Nothing set these before, so every scrolling box in the app (the designer's block column, the run
+ * record, JSON output, the assistant) got the platform's: about 15 px wide, opaque, with a visible track
+ * and arrow gutter — which takes a sixth of the designer's 224 px column and reads as furniture
+ * (reported 2026-11-21: "this scrolling bar is thick").
+ *
+ * `scrollbar-width: thin` and `scrollbar-color` are the standard forms. Chrome ignores
+ * `::-webkit-scrollbar` once `scrollbar-width` is set, so the WebKit rules below serve Safari and older
+ * Chromium; neither can be dropped without losing one of them. The thumb is slate at 45% so it is visible
+ * on the light and the dark surface, and the track is transparent so a scrollbar does not look like a
+ * panel divider.
+ */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--color-slate-500) 45%, transparent) transparent; }
+/* Firefox and Safari honour the two lines above; this is the gutter width where the pseudo-elements apply. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color-slate-500) 45%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color-slate-600) 70%, transparent); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+

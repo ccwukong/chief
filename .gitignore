@@ -1,0 +1,26 @@
+node_modules/
+dist/
+e2e/.tmp/
+# chief's state and workflow folders when run from this checkout (see packages/chief/src/paths.ts).
+# It holds chief.db and the workflow folders, which may in turn hold what the agent CLIs were given.
+.chief/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+packages/chief/src/server/web-assets.generated.ts
+
+# Never commit credentials. chief itself holds no MCP configuration and writes no key: the agent
+# CLIs keep their tokens in their own folders (~/.claude, ~/.codex, …), which are outside this
+# repository. These patterns are a guard for anything a person adds by hand while developing.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+credentials.json
+
+# The assembled landing page (scripts/build-site.mjs).
+site/dist/

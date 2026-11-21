@@ -1,0 +1,36 @@
+{
+  "name": "chief-workspace",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "chief": "node packages/chief/src/cli.ts",
+    "test": "node --test packages",
+    "e2e": "playwright test",
+    "lint": "eslint packages e2e --max-warnings 0",
+    "typecheck": "tsc --noEmit -p packages/chief && tsc --noEmit -p packages/web && tsc --noEmit -p packages/desktop",
+    "build:web": "npm run build --workspace web",
+    "build": "npm run build:web && npm run build --workspace chief",
+    "serve:dev": "node --watch packages/chief/src/cli.ts serve --no-open",
+    "dev:desktop": "npm run dev --workspace desktop",
+    "check": "npm run typecheck && npm run lint && npm run guardrails",
+    "build:desktop": "npm run build && npm run package --workspace desktop",
+    "guardrails": "node scripts/guardrails.mjs",
+    "install:cli": "node scripts/install-cli.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
+    "yaml": "^2.9.1"
+  }
+}
