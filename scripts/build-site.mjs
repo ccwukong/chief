@@ -73,8 +73,12 @@ cpSync(join(src, "styles.css"), join(out, "styles.css"));
 const terms = readFileSync(join(src, "terms.html"), "utf8").replaceAll("{{version}}", version);
 if (/\{\{/.test(terms)) throw new Error(`a placeholder was left in the terms page: ${terms.match(/\{\{[^}]*\}\}/)?.[0]}`);
 writeFileSync(join(out, "terms.html"), terms);
-// The agent CLIs' marks, beside the screenshots: the page and the README show the same files.
-cpSync(join(root, "docs/logos"), join(out, "assets/logos"), { recursive: true });
+// The agent CLIs' marks, beside the screenshots: the page and the README show the same files. Only the
+// images — the folder's own notes are for the repository, not for the site.
+mkdirSync(join(out, "assets/logos"), { recursive: true });
+for (const name of readdirSync(join(root, "docs/logos"))) {
+  if (/\.(svg|png)$/.test(name)) cpSync(join(root, "docs/logos", name), join(out, "assets/logos", name));
+}
 
 // The logo, and every screenshot, from where the repository already keeps them.
 cpSync(join(root, "packages/web/public/logo.svg"), join(out, "assets/logo.svg"));

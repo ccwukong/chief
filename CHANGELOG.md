@@ -11,6 +11,19 @@ and not yet in a version.
 
 Nothing yet.
 
+## [0.2.6] — 2026-11-21
+
+### Added
+
+- **Antigravity's logo**, from [its press kit](https://antigravity.google/press/) — the assets published for
+  exactly this, saying which products work with it. Codex remains a bare name: OpenAI's design guidelines
+  grant only a conditional permission for their marks, and that is a call for the project owner, not for a
+  logo to be scraped.
+
+### Changed
+
+- **GitHub is in the landing page's nav bar**, with the other links, instead of a button in the hero.
+
 ## [0.2.5] — 2026-11-21
 
 ### Added

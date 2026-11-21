@@ -12,7 +12,7 @@ anything you want to decide yourself.
   <img src="docs/logos/claude.svg" width="18" height="18" alt="Claude Code"> <b>Claude Code</b>
   &nbsp;·&nbsp; <b>Codex</b>
   &nbsp;·&nbsp; <img src="docs/logos/cursor.svg" width="18" height="18" alt="Cursor"> <b>Cursor</b>
-  &nbsp;·&nbsp; <b>Antigravity</b>
+  &nbsp;·&nbsp; <img src="docs/logos/antigravity.svg" width="18" height="18" alt="Antigravity"> <b>Antigravity</b>
   &nbsp;·&nbsp; <img src="docs/logos/opencode.svg" width="18" height="18" alt="OpenCode"> <b>OpenCode</b>
   &nbsp;·&nbsp; <img src="docs/logos/hermes.png" width="18" height="18" alt="Hermes"> <b>Hermes</b>
 </p>

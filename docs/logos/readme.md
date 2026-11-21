@@ -9,23 +9,30 @@ drives; that is the only thing they are used for, and each belongs to its vendor
 | `cursor.svg` | Cursor | Simple Icons (`cursor`), CC0 1.0 |
 | `opencode.svg` | OpenCode | Simple Icons (`opencode`), CC0 1.0 |
 | `hermes.png` | Hermes | NousResearch/hermes-agent, the app's own icon (`apps/bootstrap-installer/src-tauri/icons/128x128.png`), MIT |
+| `antigravity.svg` | Google Antigravity | [antigravity.google/press](https://antigravity.google/press/) — the official press kit's "Icon – Full Color" (`antigravity-icon__full-color.svg`), which exists to be used when saying what works with the product |
 
 Simple Icons releases its *drawings* under CC0, which is what lets them be committed here; the trademarks
 are the vendors' and are not licensed by it. Using a mark to say truthfully that software works with a
 product is the usual nominative use, and it stops there: no logo here is used to suggest a vendor
 endorses chief, and the tiles are neutral so a mark never borrows a brand's colour scheme.
 
-## The two without a mark
+## The one without a mark
 
-**Codex** and **Antigravity** are named in both places and given no icon, on purpose:
+**Codex** is named in both places and given no icon, on purpose:
 
-- OpenAI's mark is no longer in Simple Icons — it was withdrawn — and going around that by scraping it
-  from somewhere else would be exactly the thing being asked not to do.
-- Antigravity has no separate mark to redistribute.
+- OpenAI's mark is no longer in Simple Icons — it was withdrawn — and OpenAI's own
+  [design guidelines](https://openai.com/brand/) grant only a conditional permission for their marks, with
+  permission requests going to their partner team. Rather than take that decision here, Codex is named.
 
-A drawn approximation would be worse than nothing: it would look official and be wrong. If a vendor
-publishes assets for this use, drop the file in here, add a row to the table above, and add it to the
-strip in `site/index.html` and `README.md` — `E15.20-6` fails while the two lists disagree.
+Antigravity used to be in this group and is not any more: it has a
+[press kit](https://antigravity.google/press/) whose whole purpose is to be used, so `antigravity.svg` comes
+from there. That is the difference — a published asset intended for this use, not a mark scraped from
+elsewhere or drawn by hand. A drawn approximation would be worse than nothing: it would look official and be
+wrong.
+
+If OpenAI publishes assets for this kind of use, or you have their permission, drop the file in here, add a
+row to the table above, add it to the strip in `site/index.html` and `README.md`, and update `E15.20-6`,
+which fails while a CLI is in neither the strip nor this file.
 
 ## Adding one
 

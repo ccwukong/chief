@@ -110,6 +110,10 @@ img { max-width: 100%; height: auto; display: block; }
 .nav-links { display: flex; align-items: center; gap: 1.4rem; margin-left: auto; font-size: .93rem; }
 .nav-links a { color: var(--ink-soft); text-decoration: none; }
 .nav-links a:hover { color: var(--ink); }
+/* GitHub sits with the other links, its mark the same size as a word: it is a link to the source, not the
+   page's call to action, and the Download pill beside it stays the only filled control. */
+.nav-links .nav-gh { display: inline-flex; align-items: center; gap: .35rem; }
+.nav-gh svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 /* The pill is taller than a line of text, so the whole nav is centred on one axis: without this the links
    sat on the pill's top edge and the row read as misaligned (reported 2026-11-21). */
 .nav-cta { color: var(--surface) !important; background: var(--teal); padding: .35rem .8rem; border-radius: 999px; font-weight: 600; line-height: 1.5; }

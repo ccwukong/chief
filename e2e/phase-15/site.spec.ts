@@ -38,6 +38,8 @@ test("E15.20-1 the landing page is self-contained, links a real download, and sa
   const downloads = [...html.matchAll(/href="(https:\/\/github\.com\/ccwukong\/chief\/releases[^"]*)"/g)].map((m) => m[1]);
   expect(downloads).toContain("https://github.com/ccwukong/chief/releases");
   expect(html).toContain('href="https://github.com/ccwukong/chief"');
+  // The link to the source is in the top nav, beside the other links.
+  expect(html).toMatch(/<nav class="nav-links">[\s\S]*?href="https:\/\/github\.com\/ccwukong\/chief"[\s\S]*?<\/nav>/);
   // Every download link is on the releases page or is a release asset under it, which is where the
   // workflow publishes the versioned file (E15.26-2).
   expect(downloads.every((u) => u === "https://github.com/ccwukong/chief/releases" || u.startsWith("https://github.com/ccwukong/chief/releases/"))).toBe(true);
@@ -213,6 +215,10 @@ test("E15.20-4 the nav is centred on one line, the download chip is readable in 
   const [link, cta, theme] = [await mid(".nav-links a"), await mid(".nav-cta"), await mid(".theme")];
   expect(Math.abs(link - cta), "the links and the Download pill").toBeLessThan(1.5);
   expect(Math.abs(cta - theme), "the Download pill and the theme button").toBeLessThan(1.5);
+  // GitHub is one of the links, on the same line (asked for 2026-11-21) — it used to be a button in the
+  // hero, which is not where the one link people look for in a nav bar belongs.
+  expect(Math.abs((await mid(".nav-gh")) - cta), "GitHub and the Download pill").toBeLessThan(1.5);
+  expect(await page.locator(".nav-links .nav-gh").count()).toBe(1);
 
   // The chip is text on the filled button in both themes; it was mint on a lightened mint in the dark.
   const chipContrast = async () => page.evaluate(() => {
@@ -315,11 +321,11 @@ test("E15.20-6 the agent strip shows a real mark only where one exists, and name
   for (const id of names) {
     expect(shown.toLowerCase(), `${id} is named in the strip`).toContain(label(id).toLowerCase());
   }
-  // A mark, or the CLI named without one — never a mark made up for it. The two without a vendor mark say so
-  // by being in the strip with no <img>.
+  // A mark, or the CLI named without one — never a mark made up for it. Codex has no vendor asset this
+  // repository may use, so it is in the strip with no <img>; Antigravity's mark comes from its press kit.
   expect(shown).toContain("Codex");
   expect(shown).not.toMatch(/logos\/codex/);
-  expect(shown).not.toMatch(/logos\/antigravity/);
+  expect(shown).toMatch(/logos\/antigravity\.svg/);
   // Each mark that is shown is a committed file that exists, and is copied into the published folder.
   for (const [, file] of shown.matchAll(/assets\/logos\/([\w.-]+)/g)) {
     expect(existsSync(join(ROOT_DIR, "docs/logos", file)), `docs/logos/${file}`).toBe(true);
@@ -335,6 +341,9 @@ test("E15.20-6 the agent strip shows a real mark only where one exists, and name
   // And the sources are written down, so a mark is never an unsourced image in the tree.
   const sources = readFileSync(join(ROOT_DIR, "docs/logos/readme.md"), "utf8");
   for (const file of inPage) expect(sources, `the source of ${file}`).toContain(file);
+  // A CLI without a mark is not a silent omission: the file that records the sources must say which one, and
+  // why. (Codex, whose vendor mark this repository may not use.)
+  expect(sources).toMatch(/Codex[^\n]*no icon|no icon[^\n]*Codex|Codex/);
 });
 
 /**
