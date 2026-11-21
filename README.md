@@ -93,8 +93,9 @@ beside it in `dist/migrations/`. Run it with `node dist/chief.mjs <command>`; pu
 
 ## The desktop app (macOS)
 
-There is a one-page site with the screenshots and the download:
-**<https://ccwukong.github.io/chief/>**.
+There is a one-page site with the screenshots and the download, published from
+[chief-site](https://github.com/ccwukong/chief-site):
+**<https://runchief.dev>** (<https://runchief.pages.dev> until that domain is attached).
 
 The same chief in a window of its own, for people who would rather not open a terminal. It is not a
 second implementation: the app starts the same server `chief serve` runs, on the Node that comes with
@@ -427,7 +428,6 @@ npm run e2e          # Playwright e2e suite (uses a fake agent CLI; no tokens sp
 npm run typecheck
 npm run lint
 npm run build:desktop # the macOS app and its .dmg in dist/
-npm run site         # the landing page, assembled into site/dist (npm run site:serve to look at it)
 ```
 
 ## Changelog
@@ -445,7 +445,7 @@ are in that file; nothing here repeats them.
 plain words: chief is provided as it is, with no warranty, and the author and contributors are not liable
 for loss arising from using it — lost data, lost work, lost time. It also says what the licence already
 says: nothing in those terms takes away a right Apache-2.0 grants you. The same page is on the site at
-[ccwukong.github.io/chief/terms.html](https://ccwukong.github.io/chief/terms.html).
+[runchief.dev/terms.html](https://runchief.dev/terms.html).
 
 In plain words: use it, change it, run it at work, redistribute it, sell support around it. If you
 redistribute it or a modified version, keep the license and the copyright notice, ship the notices of

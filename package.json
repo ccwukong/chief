@@ -21,9 +21,7 @@
     "dev:desktop": "npm run dev --workspace desktop",
     "check": "npm run typecheck && npm run lint && npm run guardrails",
     "build:desktop": "npm run build && npm run package --workspace desktop",
-    "guardrails": "node scripts/guardrails.mjs",
-    "site": "node scripts/build-site.mjs",
-    "site:serve": "node scripts/build-site.mjs --serve"
+    "guardrails": "node scripts/guardrails.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

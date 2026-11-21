@@ -145,8 +145,8 @@ demand). Each version keeps `max(recorded, seen now)`, and `total` is the sum of
 number only ever grows — deleting a release cannot lower it, and a version that has been pruned keeps its
 count. Its history is the file's git log, which is the audit trail. The tally commit says `[skip ci]`, and
 `ci.yml` and `desktop.yml` ignore the path, so keeping the counter current never spends CI or a runner.
-The landing page bakes the number in when it builds (`scripts/build-site.mjs`), which is why it shows the
-ledger's total and not a live badge: a live count is the one that would drop when a release is pruned.
+The landing page is not built from this repository. It lives in
+[chief-site](https://github.com/ccwukong/chief-site) and does not show the ledger's total.
 
 What the workflow checks before anything is published: `plutil -lint`, the bundle identifier and the
 version from the manifest, `codesign --verify --deep --strict`, `Signature=adhoc`, the server, its
@@ -154,13 +154,10 @@ migrations and the licence files inside the bundle, a `.dmg` that mounts and hol
 executable, and a `shasum -a 256` under the published name (E15.16-1, E15.26-1).
 
 **The landing page follows the newest release.** Because the asset is named for its version, the page
-cannot hard-code a URL: `.github/workflows/pages.yml` reads the newest release's asset
-(`browser_download_url` and `size`, matched as `chief-<version>-apple-silicon.dmg` so no version is
-written down there) and passes them to `scripts/build-site.mjs` as `CHIEF_DMG_URL` and
-`CHIEF_DMG_SIZE`; a local build without them links to the releases page instead. The page is also
-republished when a release appears (`release: types: [published]`), when `downloads.json` changes (the
-counter is baked in from it) and once a day — a push made with the workflow's own token raises no event
-GitHub acts on, so the tally's commit cannot be relied on to rebuild the page by itself.
+in chief-site cannot hard-code a URL: its build reads the newest release's
+`chief-<version>-apple-silicon.dmg` (`browser_download_url` and `size`) and, with no release yet,
+links to the releases page. A chief release does not republish the page by itself; the site's deploy
+workflow is run by hand when the download button should name the new file.
 
 ## Develop with live reload
 

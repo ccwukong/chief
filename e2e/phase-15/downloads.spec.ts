@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -132,40 +132,5 @@ test("E15.29-4 --check writes nothing and exits 1 when the ledger is stale, 0 wh
     expect(JSON.parse(readFileSync(join(t.dir, "downloads.json"), "utf8")).total).toBe(30);
   } finally {
     t.done();
-  }
-});
-
-/**
- * The ledger is only half of it: the page must show that number and nothing live. A shields.io badge reads
- * GitHub's totals, which is exactly the number that drops when an old release is pruned, so the page bakes
- * the ledger in at build time instead.
- */
-test("E15.29-5 the page shows no download counter at all, and loads nothing from another origin but the Node link", () => {
-  // The number is the repository's own record: `downloads.json` and the `downloads` workflow, not the page.
-  // A public total reads as a measure of the product, and it counts downloads of a build, not people using
-  // it — so nothing is shown, whoever is asking. The build is run against a ledger with a large number so
-  // the assertion is about the page, not about today's count.
-  const dir = mkdtempSync(join(tmpdir(), "chief-site-tally-"));
-  const out = join(dir, "dist");
-  const ledger = join(dir, "downloads.json");
-  writeFileSync(ledger, JSON.stringify({ updated: "2026-11-20T00:00:00.000Z", total: 1204, versions: { "0.2.0": 1000, "0.1.0": 204 } }));
-  try {
-    execFileSync(process.execPath, [join(ROOT_DIR, "scripts/build-site.mjs")], {
-      cwd: ROOT_DIR,
-      env: { ...process.env, CHIEF_SITE_OUT: out, CHIEF_DOWNLOADS_FILE: ledger },
-      stdio: "pipe",
-    });
-    const html = readFileSync(join(out, "index.html"), "utf8");
-    // Not a smaller number and not a live badge: no counter, however high the ledger is.
-    expect(html).not.toContain('data-testid="downloads"');
-    expect(html).not.toContain("1,204");
-    expect(html).not.toMatch(/downloads, counted/);
-    expect(html).not.toContain("shields.io");
-    expect(html).not.toMatch(/<img[^>]+src="https?:/);
-    const external = [...html.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)].map((m) => m[1])
-      .filter((u) => !u.startsWith("https://github.com/ccwukong/chief"));
-    expect(external.sort()).toEqual(["http://127.0.0.1:8080", "https://nodejs.org"]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 });

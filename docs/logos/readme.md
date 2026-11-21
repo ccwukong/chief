@@ -38,5 +38,5 @@ page but not in this file, or the reverse.
 ## Adding one
 
 Each file is a 24×24 tile: a rounded square (`#F1F3F6`) with the mark inset, so the same file reads on a
-light page and a dark one. `node scripts/build-site.mjs` copies this folder to `site/dist/assets/logos/`,
-so the page and the README show the same bytes.
+light page and a dark one. The README shows these files. The landing page, in
+[chief-site](https://github.com/ccwukong/chief-site), copies this folder when it builds.

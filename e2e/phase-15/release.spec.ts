@@ -193,9 +193,6 @@ test("E15.19-1 every screenshot the README shows exists and is shown, and the da
   // under a caption saying "The dark theme", and every case passed because none looked at a pixel
   // (found 2026-11-20). The light run list measures about 247; a dark page cannot.
   expect(readme).toContain("in the dark theme");
-  const site = readFileSync(join(ROOT_DIR, "site/index.html"), "utf8");
-  expect(site).toContain("assets/screenshots/run-dark.png");
-  expect(site).toContain("The dark theme");
   const dark = pngLuminance(join(ROOT_DIR, "docs/screenshots/run-dark.png"));
   expect({ width: dark.width, height: dark.height }, "the same 1360×860 frame as the others, at 2x").toEqual({ width: 2720, height: 1720 });
   expect(dark.mean, "the dark screenshot's mean luminance").toBeLessThan(110);
@@ -337,13 +334,8 @@ test("E15.26-2 the download is named for its version and the Mac it is for, and 
   expect(release.split("\n").filter((l) => l.trim().startsWith("gh release delete"))).toEqual([]);
   expect(release).toContain("gh release delete <tag>");
 
-  // The page cannot hard-code a versioned asset URL: it takes the download from the build
-  // (`CHIEF_DMG_URL`), and the README points at the releases page rather than naming a file.
-  const site = readFileSync(join(ROOT_DIR, "site/index.html"), "utf8");
-  expect(site).toContain("{{dmg-url}}");
-  expect(site, "no -latest link in the page").not.toContain("latest.dmg");
-  // Where the page names the file, it is the real name (task 15.28).
-  expect(site).toContain("chief-{{version}}-apple-silicon.dmg");
+  // The README points at the releases page rather than naming one file. The landing page, which
+  // fills in the versioned asset, lives in ccwukong/chief-site.
   expect(readFileSync(join(ROOT_DIR, "README.md"), "utf8")).toContain("https://github.com/ccwukong/chief/releases");
 });
 
@@ -378,26 +370,6 @@ test("E15.28-1 no release asset is named after arm64: the file is chief-<version
   for (const file of ["README.md", "docs/desktop.md"]) {
     expect(readFileSync(join(ROOT_DIR, file), "utf8"), file).toContain("Apple silicon");
   }
-});
-
-test("E15.26-3 the landing page's download follows the newest release, and works before there is one", () => {
-  const pages = parse(readFileSync(join(ROOT_DIR, ".github/workflows/pages.yml"), "utf8")) as { on: any; jobs: Record<string, { steps: any[] }> };
-  // A new release changes the link, so the page is republished when one appears.
-  expect(pages.on.release.types).toEqual(["published"]);
-  const build = Object.values(pages.jobs)[0];
-  const d = build.steps.map((s) => String(s.run ?? "")).join("\n");
-  // It resolves the newest release and its asset by shape — `chief-*-apple-silicon.dmg`, so no version is
-  // written down here — and passes the URL and the size in.
-  expect(d).toContain("releases?per_page=100");
-  expect(d).toContain("chief-.+-apple-silicon\\.dmg");
-  expect(d).not.toContain("arm64");
-  const env = build.steps.map((s) => String(s.env?.CHIEF_DMG_URL ?? "")).join(" ");
-  expect(env).toContain("steps.dmg.outputs.url");
-  const html = readFileSync(join(ROOT_DIR, "scripts/build-site.mjs"), "utf8");
-  expect(html).toContain("CHIEF_DMG_URL");
-  expect(html).toContain("CHIEF_DMG_SIZE");
-  // With no release yet, the page still builds and links to the releases page instead of failing.
-  expect(html).toContain("releases");
 });
 
 /**
@@ -448,13 +420,6 @@ test("E15.29-6 a tally commit keeps the ledger current, says [skip ci], and star
   const desktop = parse(readFileSync(join(ROOT_DIR, ".github/workflows/desktop.yml"), "utf8")) as { jobs: Record<string, any> };
   expect(desktop.jobs.version).toBeTruthy();
 
-  // The page's counter comes from that file, and is rebuilt when it changes.
-  const pages = parse(readFileSync(join(ROOT_DIR, ".github/workflows/pages.yml"), "utf8")) as { on: any };
-  expect(pages.on.push.paths).toContain("downloads.json");
-  // And it builds daily as well, because the tally's own commit cannot trigger it: a push made with the
-  // workflow's token raises no event GitHub acts on (its loop guard). The schedule is what keeps the baked
-  // counter from staying a day behind for ever if the path trigger never fires.
-  expect(pages.on.schedule?.[0]?.cron).toBeTruthy();
   // The file is what the docs point at, and the script that writes it is runnable on its own.
   expect(readFileSync(join(ROOT_DIR, "docs/desktop.md"), "utf8")).toContain("gh workflow run downloads");
 });
