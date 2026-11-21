@@ -9,6 +9,10 @@ and not yet in a version.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.5] — 2026-11-21
+
 ### Added
 
 - **Hermes Agent is the sixth agent CLI.** `agent: hermes` runs a step with
@@ -18,6 +22,17 @@ and not yet in a version.
   against a fake CLI only, so it is listed with Codex and Cursor as unverified; Hermes also cannot be
   told per run to use no built-in tools (its toolsets come from its own config), which the README
   says in "Limits worth knowing".
+- **The CLI logos**, on the landing page and in the README: Claude Code, Cursor, OpenCode and Hermes with
+  their vendors' own marks, and Codex and Antigravity named without one rather than given an invented logo.
+
+### Changed
+
+- **The landing page opens in the dark theme**, and its top-right button shows a sun while the page is dark
+  and a moon while it is light — it says what pressing it gives you. Your choice is remembered.
+- **The supported CLIs have a row of their own** under the hero, in a line, instead of wrapping inside the
+  hero's text column.
+- The page asks for its stylesheet with the version in the URL, so a new page never renders over a cached
+  older one.
 
 ## [0.2.4] — 2026-11-21
 

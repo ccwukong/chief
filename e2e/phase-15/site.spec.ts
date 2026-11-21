@@ -336,3 +336,40 @@ test("E15.20-6 the agent strip shows a real mark only where one exists, and name
   const sources = readFileSync(join(ROOT_DIR, "docs/logos/readme.md"), "utf8");
   for (const file of inPage) expect(sources, `the source of ${file}`).toContain(file);
 });
+
+/**
+ * The page's prose lists the CLIs too, in three places, and prose drifts: when Hermes was added as a sixth
+ * adapter the README gained it and the page's two lists still said five (found 2026-11-21). The strip is
+ * checked by E15.20-6; this checks the sentences beside it.
+ */
+test("E15.20-7 every CLI list in the page and the README names every adapter chief registers", () => {
+  const out = build();
+  const html = readFileSync(join(out, "index.html"), "utf8");
+  const readme = readFileSync(join(ROOT_DIR, "README.md"), "utf8");
+  const adapters = /ADAPTER_NAMES\s*=\s*\[([^\]]+)\]/.exec(readFileSync(join(ROOT_DIR, "packages/chief/src/adapters/index.ts"), "utf8"))!;
+  const names = [...adapters[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const labels = readFileSync(join(ROOT_DIR, "packages/web/src/pages/settings.tsx"), "utf8");
+  const label = (id: string) => new RegExp(`["']?${id}["']?\\s*:\\s*["']([^"']+)["']`).exec(labels)?.[1] ?? id;
+
+  // Every sentence that lists what chief can drive: it must name all of them. Both files are hard-wrapped
+  // prose, so the text is flattened first and a window after each anchor phrase is checked.
+  const flat = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const anchors = ["whichever you are signed in to", "already signed in:", "agent CLI you already use"];
+  const sources = [flat(html), flat(readme)];
+  let found = 0;
+  for (const text of sources) {
+    for (const anchor of anchors) {
+      for (let i = text.indexOf(anchor); i >= 0; i = text.indexOf(anchor, i + 1)) {
+        found++;
+        // The anchor is the end of each list ("… or Hermes — whichever you are signed in to"), so the
+        // window reaches back as well as forward.
+        const says = text.slice(Math.max(0, i - 220), i + 320);
+        for (const id of names) expect(says, `"${label(id)}" beside "${anchor}"`).toContain(label(id));
+      }
+    }
+  }
+  expect(found, "the CLI lists in the page and the README").toBeGreaterThanOrEqual(3);
+  // And the "unverified" line is honest about Hermes: it was written from the vendor's docs, unrun.
+  expect(html).toMatch(/Codex, Cursor and Hermes adapters are written from their docs/);
+  expect(readme).toMatch(/Codex and Cursor and Hermes|Hermes/);
+});
