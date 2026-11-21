@@ -11,14 +11,26 @@ and not yet in a version.
 
 Nothing yet.
 
+## [0.2.7] — 2026-11-21
+
+### Changed
+
+- **GitHub is in the landing page's nav bar**, with the other links, instead of a button in the hero.
+- **Every CLI now shows its vendor's mark**, Codex included: OpenAI publishes its kit from
+  [openai.com/brand](https://openai.com/brand/) and its terms permit showing the mark where it relates to
+  OpenAI's services, used exactly as provided — so the kit's own black and white files are shipped
+  unmodified, one per theme.
+- **The landing page no longer ends on a list of caveats.** Nothing was made untrue: the unsigned app is
+  explained where macOS warns about it, and the unverified adapters are in the README's "Limits worth
+  knowing".
+
 ## [0.2.6] — 2026-11-21
 
 ### Added
 
 - **Antigravity's logo**, from [its press kit](https://antigravity.google/press/) — the assets published for
-  exactly this, saying which products work with it. Codex remains a bare name: OpenAI's design guidelines
-  grant only a conditional permission for their marks, and that is a call for the project owner, not for a
-  logo to be scraped.
+  exactly this, saying which products work with it. (Codex had no mark in this version; it has one from
+  0.2.7.)
 
 ### Changed
 

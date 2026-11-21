@@ -321,11 +321,17 @@ test("E15.20-6 the agent strip shows a real mark only where one exists, and name
   for (const id of names) {
     expect(shown.toLowerCase(), `${id} is named in the strip`).toContain(label(id).toLowerCase());
   }
-  // A mark, or the CLI named without one — never a mark made up for it. Codex has no vendor asset this
-  // repository may use, so it is in the strip with no <img>; Antigravity's mark comes from its press kit.
-  expect(shown).toContain("Codex");
-  expect(shown).not.toMatch(/logos\/codex/);
+  // A mark, or the CLI named without one — never a mark made up for it. Every CLI now has a vendor mark:
+  // Antigravity's from its press kit, Codex's from OpenAI's brand kit (unmodified, one file per theme).
   expect(shown).toMatch(/logos\/antigravity\.svg/);
+  expect(shown).toMatch(/logos\/openai-black\.svg[\s\S]*logos\/openai-white\.svg/);
+  // The OpenAI mark is used exactly as the kit supplies it: the committed files are byte-identical to the
+  // kit's, with no tile drawn around them and no recolour. This is the check that keeps "unmodified" true.
+  for (const name of ["openai-black.svg", "openai-white.svg"]) {
+    const svg = readFileSync(join(ROOT_DIR, "docs/logos", name), "utf8");
+    expect(svg.startsWith('<svg width="721" height="721" viewBox="0 0 721 721"'), `${name} is the kit's own svg`).toBe(true);
+    expect(svg, `${name} has no tile added`).not.toMatch(/<rect[^>]*width="721"/);
+  }
   // Each mark that is shown is a committed file that exists, and is copied into the published folder.
   for (const [, file] of shown.matchAll(/assets\/logos\/([\w.-]+)/g)) {
     expect(existsSync(join(ROOT_DIR, "docs/logos", file)), `docs/logos/${file}`).toBe(true);
@@ -335,9 +341,11 @@ test("E15.20-6 the agent strip shows a real mark only where one exists, and name
   // (Only image files — the README also links the folder's own notes.)
   const readme = readFileSync(join(ROOT_DIR, "README.md"), "utf8");
   const marks = /\.(?:svg|png)$/;
-  const inReadme = new Set([...readme.matchAll(/docs\/logos\/([\w.-]+)/g)].map((m) => m[1]).filter((f) => marks.test(f)));
   const inPage = new Set([...shown.matchAll(/assets\/logos\/([\w.-]+)/g)].map((m) => m[1]));
-  expect([...inReadme].sort()).toEqual([...inPage].sort());
+  const inReadme = new Set([...readme.matchAll(/docs\/logos\/([\w.-]+)/g)].map((m) => m[1]).filter((f) => marks.test(f)));
+  // The README shows one file per theme where a vendor supplies two; the page needs both, so the page's set
+  // is a superset of the README's.
+  for (const file of inReadme) expect(inPage.has(file), `${file} is also on the page`).toBe(true);
   // And the sources are written down, so a mark is never an unsourced image in the tree.
   const sources = readFileSync(join(ROOT_DIR, "docs/logos/readme.md"), "utf8");
   for (const file of inPage) expect(sources, `the source of ${file}`).toContain(file);
@@ -378,7 +386,10 @@ test("E15.20-7 every CLI list in the page and the README names every adapter chi
     }
   }
   expect(found, "the CLI lists in the page and the README").toBeGreaterThanOrEqual(3);
-  // And the "unverified" line is honest about Hermes: it was written from the vendor's docs, unrun.
-  expect(html).toMatch(/Codex, Cursor and Hermes adapters are written from their docs/);
-  expect(readme).toMatch(/Codex and Cursor and Hermes|Hermes/);
+  // And the "unverified" fact is still recorded where it belongs — the README's limits, not the landing page
+  // (the page's downer footer line was removed on request 2026-11-21: *"can you not mention … to kill the
+  // vibe?"*; the facts themselves stay, one in the install steps, one in the README).
+  expect(readme).toMatch(/Codex, Cursor and Hermes adapters are unverified/);
+  expect(readme).toMatch(/Hermes/);
+  expect(html, "the landing page does not repeat the limits paragraph").not.toMatch(/Honest limits/);
 });

@@ -10,7 +10,7 @@ anything you want to decide yourself.
 <p align="center">
   <sub><b>WORKS WITH</b></sub><br>
   <img src="docs/logos/claude.svg" width="18" height="18" alt="Claude Code"> <b>Claude Code</b>
-  &nbsp;·&nbsp; <b>Codex</b>
+  &nbsp;·&nbsp; <picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/openai-white.svg"><img src="docs/logos/openai-black.svg" width="18" height="18" alt="OpenAI, which makes Codex"></picture> <b>Codex</b>
   &nbsp;·&nbsp; <img src="docs/logos/cursor.svg" width="18" height="18" alt="Cursor"> <b>Cursor</b>
   &nbsp;·&nbsp; <img src="docs/logos/antigravity.svg" width="18" height="18" alt="Antigravity"> <b>Antigravity</b>
   &nbsp;·&nbsp; <img src="docs/logos/opencode.svg" width="18" height="18" alt="OpenCode"> <b>OpenCode</b>

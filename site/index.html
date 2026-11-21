@@ -88,7 +88,7 @@
     <div class="agents" data-testid="agents">
       <span class="agents-label">Works with</span>
       <span class="agent"><img src="assets/logos/claude.svg" alt="" width="20" height="20">Claude Code</span>
-      <span class="agent no-mark">Codex</span>
+      <span class="agent"><img class="mark-on-light" src="assets/logos/openai-black.svg" alt="" width="20" height="20"><img class="mark-on-dark" src="assets/logos/openai-white.svg" alt="" width="20" height="20">Codex</span>
       <span class="agent"><img src="assets/logos/cursor.svg" alt="" width="20" height="20">Cursor</span>
       <span class="agent"><img src="assets/logos/antigravity.svg" alt="" width="20" height="20">Antigravity</span>
       <span class="agent"><img src="assets/logos/opencode.svg" alt="" width="20" height="20">OpenCode</span>
@@ -333,7 +333,6 @@
         <article class="safe"><h3>Scripts run in a sandbox</h3><p>No network, writes only in the step's folder and a scratch directory, an allowlist for environment variables, and protected paths (credentials, start-up files, git hooks) that can never be granted.</p></article>
         <article class="safe"><h3>Irreversible steps ask first</h3><p>A step that sends a message or posts a comment is gated before it runs, and a step that reported side effects is never retried automatically.</p></article>
       </div>
-      <p class="tiny center">Honest limits: the app is unsigned and not notarized, and the Codex, Cursor and Hermes adapters are written from their docs and not verified against the real CLIs. All of it is in the <a href="https://github.com/ccwukong/chief#readme">README</a>.</p>
     </div>
   </section>
 
