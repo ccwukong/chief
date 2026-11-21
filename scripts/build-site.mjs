@@ -62,6 +62,10 @@ let html = readFileSync(join(src, "index.html"), "utf8")
 if (/\{\{/.test(html)) throw new Error(`a placeholder was left in the page: ${html.match(/\{\{[^}]*\}\}/)?.[0]}`);
 writeFileSync(join(out, "index.html"), html);
 cpSync(join(src, "styles.css"), join(out, "styles.css"));
+// The terms are a page of their own: the licence says "as is" in legal drafting, and a person deciding
+// whether to run this should be able to read the same thing in plain words, from the page and from the
+// repository. E15.20-5 checks the two carry the same claims.
+cpSync(join(src, "terms.html"), join(out, "terms.html"));
 
 // The logo, and every screenshot, from where the repository already keeps them.
 cpSync(join(root, "packages/web/public/logo.svg"), join(out, "assets/logo.svg"));

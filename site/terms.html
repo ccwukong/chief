@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms — chief</title>
+<meta name="description" content="chief's terms: Apache-2.0 software, provided as is, with no warranty and no liability for loss. In plain words.">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<!--
+  The site's copy of `docs/terms.md`, which is the canonical one in the repository. The wording is the same
+  on purpose: a person reading it here and a person reading it on GitHub must not be told two different
+  things, and E15.20-5 checks the two carry the same claims.
+-->
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="index.html" aria-label="chief">
+    <svg viewBox="-2 1 68 60" class="brand-mark" aria-hidden="true"><defs><g id="f"><path d="M32 31C36.2 26 36.6 14 32 5C27.4 14 27.8 26 32 31Z"/><path d="M32 5C34.3 9.5 35.3 13 35.4 16.5H28.6C28.7 13 29.7 9.5 32 5Z" fill="#0f172a" fill-opacity="0.45"/><path d="M32 30V9" stroke="#0f172a" stroke-opacity="0.35" stroke-width="0.9" stroke-linecap="round" fill="none"/></g></defs><g fill="#0f766e"><use href="#f" transform="rotate(-78 32 38)"/><use href="#f" transform="rotate(-26 32 38)"/><use href="#f" transform="rotate(26 32 38)"/><use href="#f" transform="rotate(78 32 38)"/></g><g fill="#f59e0b"><use href="#f" transform="rotate(-52 32 38)"/><use href="#f" transform="rotate(0 32 38)"/><use href="#f" transform="rotate(52 32 38)"/></g><path d="M21.5 37.5h21v6.2c0 6.6-4.6 11.6-10.5 13.3-5.9-1.7-10.5-6.7-10.5-13.3z" fill="#e7b98f"/><path d="M26 45.5h4M34 45.5h4" stroke="#0f172a" stroke-width="1.8" stroke-linecap="round"/><rect x="19" y="32.5" width="26" height="6.5" rx="3.25" fill="#dc2626"/></svg>
+    <span>chief</span>
+  </a>
+  <nav class="nav-links">
+    <a href="index.html">Home</a>
+    <a href="https://github.com/ccwukong/chief/blob/main/docs/terms.md">This page on GitHub</a>
+  </nav>
+</header>
+
+<main>
+  <section class="band">
+    <div class="band-inner terms">
+      <p class="eyebrow">Last updated 2026-11-21</p>
+      <h1>Terms</h1>
+      <p class="sub">
+        chief is free, open-source software. There is no account, no company behind it, no hosted service
+        and nothing to buy. These terms say, in plain words, what you are responsible for when you run it,
+        and what happens if it goes wrong.
+      </p>
+
+      <h2>1. The software is Apache-2.0, and these terms do not change that</h2>
+      <p>
+        chief is licensed under the <a href="https://github.com/ccwukong/chief/blob/main/LICENSE">Apache
+        License, Version 2.0</a>. That licence is what grants you the right to use, copy, change and
+        redistribute chief — including commercially — and <b>nothing on this page takes any of it away.</b>
+        Where these terms and the licence differ about the software, the licence wins.
+      </p>
+      <p>
+        These terms also cover the project's website, and restate the licence's warranty and liability
+        sections so that nobody has to read legal drafting to know where they stand.
+      </p>
+
+      <h2>2. What you are responsible for</h2>
+      <p>
+        chief runs agent CLIs on your machine, with the permissions you give them, and it runs scripts in a
+        sandbox. You choose what a workflow does, what each step is allowed to reach, and which agent CLI
+        and MCP servers it uses. So you are responsible for:
+      </p>
+      <ul class="plain">
+        <li>the workflows you write or ask chief bot to write, and the prompts in them;</li>
+        <li>the actions an agent takes with the access it has — sending a message, opening a pull request, changing a file;</li>
+        <li>keeping your own backups. chief's state is a SQLite database and a folder of workflows under <code>~/.chief</code>. If that folder is lost, damaged or deleted, the workflows and run history in it are gone;</li>
+        <li>the accounts, API keys, agent subscriptions and MCP servers you connect, and the terms of those services. They are not ours, and we cannot answer for them;</li>
+        <li>making sure what you do with it is lawful where you are.</li>
+      </ul>
+
+      <h2>3. No warranty</h2>
+      <p>
+        chief is provided <b>“as is”, without warranty of any kind</b>, express or implied, including the
+        warranties of merchantability, fitness for a particular purpose and non-infringement. Nobody
+        promises it will work, be free of defects, or suit what you want it for. This is the same
+        disclaimer as section 7 of the Apache-2.0 licence.
+      </p>
+
+      <h2>4. Limitation of liability</h2>
+      <p>
+        To the maximum extent permitted by law, the author and contributors are <b>not liable for any loss
+        or damage</b> arising from chief or from using it: lost or corrupted data, lost work, lost time,
+        lost profits or revenue, or any indirect, incidental, special or consequential damages, however
+        caused and whether or not anyone was told the loss was possible. This is the same limitation as
+        section 8 of the Apache-2.0 licence.
+      </p>
+      <p>
+        Nothing here limits a right the law gives you and does not let you waive — for example, mandatory
+        consumer protection where you live.
+      </p>
+
+      <h2>5. The name and the logo</h2>
+      <p>
+        The Apache-2.0 licence gives you no right to use the name <b>chief</b> or its logo for your own
+        version. You may say, truthfully, that your work is based on chief or uses chief. You may not
+        present a modified build as chief itself.
+      </p>
+
+      <h2>6. Changes</h2>
+      <p>
+        These terms may be updated as the project changes; the date above is when that last happened. The
+        version that applies to you is the one in the repository at the time you use it. The licence cannot
+        be retroactively restricted: a version already released under Apache-2.0 stays under Apache-2.0.
+      </p>
+
+      <h2>7. What chief sends, and what it does not</h2>
+      <p>
+        chief has no analytics, no crash reporting and no account. It makes one request of its own: on
+        launch it asks GitHub whether a newer release exists (turn that off with
+        <code>CHIEF_NO_UPDATE_CHECK=1</code>). Everything else that leaves your machine is what your agent
+        CLI or an MCP server sends, to services you are already signed in to.
+      </p>
+
+      <h2>8. Contributions</h2>
+      <p>
+        Contributions are welcome under the same licence and the contributor grant described in
+        <a href="https://github.com/ccwukong/chief/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.
+      </p>
+
+      <p class="tiny">
+        These terms are written to be read, and are not legal advice. If you need certainty for a
+        commercial deployment, have a lawyer look at them.
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="band-inner foot-inner">
+    <div>
+      <a class="brand" href="index.html">
+        <svg viewBox="-2 1 68 60" class="brand-mark" aria-hidden="true"><use href="#f"/></svg>
+        <span>chief</span>
+      </a>
+      <p class="tiny">A local-first workflow orchestrator for agent CLIs. Apache-2.0.</p>
+    </div>
+    <nav class="foot-links">
+      <a href="https://github.com/ccwukong/chief">Source</a>
+      <a href="https://github.com/ccwukong/chief/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/ccwukong/chief/blob/main/LICENSE">License</a>
+      <a href="terms.html">Terms</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

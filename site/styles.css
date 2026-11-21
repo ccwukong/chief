@@ -87,6 +87,16 @@ img { max-width: 100%; height: auto; display: block; }
 .tiny { font-size: .82rem; color: var(--ink-soft); }
 .sub { font-size: 1.05rem; color: var(--ink-soft); max-width: 62ch; }
 
+/* ── terms ───────────────────────────────────────────────────────────── */
+/* The terms page is prose, not a landing band: section headings are the size of a heading in a
+   document, and the measure is capped so a line stays readable across a wide window. */
+.terms h2 { font-size: 1.12rem; margin: 2.2rem 0 .4rem; }
+.terms p { margin: 0 0 .9rem; color: var(--ink-soft); max-width: 68ch; }
+.terms ul.plain { margin: 0 0 1rem; padding-left: 1.1rem; max-width: 68ch; }
+.terms li { color: var(--ink-soft); margin-bottom: .4rem; }
+.terms a { color: var(--teal); }
+.terms code { font-family: var(--mono); font-size: .88em; background: var(--teal-soft); color: var(--teal); padding: .1em .35em; border-radius: 4px; }
+
 /* ── nav ─────────────────────────────────────────────────────────────── */
 .nav {
   position: sticky; top: 0; z-index: 20;

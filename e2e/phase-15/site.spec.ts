@@ -243,3 +243,37 @@ test("E15.20-4 the nav is centred on one line, the download chip is readable in 
   await expect(step).toContainText("Move to Bin");
   await expect(step).toContainText("xattr -dr com.apple.quarantine");
 });
+
+/**
+ * Task 12.1 / 15.20: the terms a person reads before running someone else's automation, in plain words
+ * (asked for 2026-11-21, after `ttps://orca.dev/terms` as the shape of the thing). One canonical document
+ * in the repository; the site's page must say the same, because a person reading either one is deciding
+ * whether to trust the thing.
+ */
+test("E15.20-5 the terms page is published, linked from the page and the README, and does not narrow the licence", () => {
+  const out = build();
+  const terms = readFileSync(join(out, "terms.html"), "utf8");
+  const html = readFileSync(join(out, "index.html"), "utf8");
+  const doc = readFileSync(join(ROOT_DIR, "docs/terms.md"), "utf8");
+
+  // Linked from the front page's footer, and shipped: a terms page nobody can reach is a decoration.
+  expect(html).toMatch(/href="terms\.html"[^>]*>Terms</);
+  // The claims a person needs, in words they can read: no warranty, no liability for loss, and the licence
+  // underneath it all. Both copies, so the site cannot drift from the repository. Whitespace in the patterns
+  // is loose because both files are hard-wrapped prose.
+  for (const text of [terms, doc]) {
+    expect(text).toMatch(/as is/i);
+    expect(text).toMatch(/without warranty/i);
+    expect(text).toMatch(/not\s+liable/i);
+    expect(text).toMatch(/lost or corrupted data|lost\s+data/i);
+    expect(text).toMatch(/Apache\s+License,\s+Version\s+2\.0/);
+  }
+  // The one thing such a page must never do: add a restriction on top of an open-source licence. Both say
+  // the licence wins and point at it.
+  expect(terms).toMatch(/nothing on this page\s+takes any of it away/);
+  expect(doc).toMatch(/nothing on this page\s+takes any of it away/);
+  expect(terms).toMatch(/LICENSE/);
+  // The copyright holder is named where Apache-2.0 requires it (the licence), and nowhere on the site is a
+  // personal name presented as the terms' authority.
+  expect(terms).not.toMatch(/Chen Cheng/);
+});

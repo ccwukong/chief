@@ -419,6 +419,12 @@ releases it.
 chief is licensed under the [Apache License, Version 2.0](LICENSE). The terms and the copyright notice
 are in that file; nothing here repeats them.
 
+**Nothing is guaranteed, and nothing is your fault but your own.** [TERMS.md](docs/terms.md) says that in
+plain words: chief is provided as it is, with no warranty, and the author and contributors are not liable
+for loss arising from using it — lost data, lost work, lost time. It also says what the licence already
+says: nothing in those terms takes away a right Apache-2.0 grants you. The same page is on the site at
+[ccwukong.github.io/chief/terms.html](https://ccwukong.github.io/chief/terms.html).
+
 In plain words: use it, change it, run it at work, redistribute it, sell support around it. If you
 redistribute it or a modified version, keep the license and the copyright notice, ship the notices of
 the third-party packages it contains, and say what you changed. The Apache license also gives you a

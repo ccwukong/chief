@@ -305,12 +305,15 @@ function diagnostics(): string {
   ].join("\n");
 }
 function buildMenu() {
-  const version = app.getVersion();  // The native About panel, as every macOS app has it: chief's icon, name and version.
+  const version = app.getVersion();
+  // The native About panel, as every macOS app has it: chief's icon, name and version. No copyright
+  // line and no person's name: the notice that has to travel with a copy of chief is in the app's own
+  // `LICENSE` (`Contents/Resources/server/LICENSE`), which is where Apache-2.0 §4 asks for it. A name in
+  // a menu adds nothing a licence file does not already say, and the licence is the copy that travels.
   app.setAboutPanelOptions({
     applicationName: "chief",
     applicationVersion: version,
-    copyright: "© 2026 Chen Cheng. Apache-2.0.",
-    credits: "A local-first workflow orchestrator for agent CLIs.",
+    credits: "A local-first workflow orchestrator for agent CLIs. Apache-2.0.",
   });
   const template: MenuItemConstructorOptions[] = [
     {
