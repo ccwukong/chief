@@ -52,8 +52,14 @@ Work proceeds phase by phase, in the order of `docs/dev-plan.md` §7.
    `e2e/plan-coverage.spec.ts`, which is cheap and is the one case that guards the plan files) unless
    the request names something wider. Record every run in the "Phase results" table of
    `docs/e2e-test-plan.md` (date, what was run, pass/fail counts), and say in the report which cases
-   were run and that the rest were not. CI is where the suite runs on its own: on a pull request, and
-   by hand (15.52).
+   were run and that the rest were not. CI is where the suite runs on its own: on a pull request — and
+   only there, unless a manual start asks for it with `-f e2e=true` (15.52).
+
+   **Starting a workflow by hand is not a way round this.** `gh workflow run ci` is the recovery for a
+   dropped push event (15.30); it runs the fast gate, and the macOS suite only when the dispatch says
+   so. Recovering a push is `gh workflow run ci` plus `gh workflow run desktop.yml` for a release —
+   never a suite nobody asked for. Found 2026-11-22 by dispatching `ci` to recover a push and getting
+   twelve minutes of macOS suite behind the person's back.
 5. **Do not move on with a red case.** Fix the failure, or mark the affected task
    `blocked` in the dev plan with the reason, before moving on.
 6. **Report honestly.** If a test case could not be run (for example it needs a CLI that is not

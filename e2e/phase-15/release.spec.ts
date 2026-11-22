@@ -522,7 +522,6 @@ test("E15.52-1 the e2e suite runs on a pull request or by hand, never on a push 
   const e2e = suite[0] as { if?: string };
   expect(e2e.if, "the suite is conditioned").toBeTruthy();
   expect(e2e.if).toContain("pull_request");
-  expect(e2e.if).toContain("workflow_dispatch");
   // A push must not be able to satisfy it: neither branch of the condition may be one.
   for (const branch of String(e2e.if).split("||")) expect(branch, "no branch of the condition is a push").not.toContain("push");
 
@@ -540,18 +539,46 @@ test("E15.52-1 the e2e suite runs on a pull request or by hand, never on a push 
   expect(agents, "AGENTS.md states when the suite runs").toMatch(/e2e suite on a pull request or by hand/i);
 });
 
+test("E15.110-1 a manual workflow start does not run the e2e suite unless it asks", () => {
+  // Found 2026-11-22 by doing it: a force push produced no runs at all, the push was recovered with
+  // `gh workflow run ci` — the documented way for exactly that (task 15.30) — and a 12-minute macOS suite
+  // started that nobody had asked for, which is the one thing the standard forbids (15.52, 15.53). The
+  // dispatch carries a flag now, and this is what keeps it there.
+  const ci = parse(readFileSync(join(ROOT_DIR, ".github/workflows/ci.yml"), "utf8")) as {
+    on: any;
+    jobs: Record<string, { if?: string; steps: { run?: string }[] }>;
+  };
+  const suite = Object.values(ci.jobs).find((j) => j.steps.some((s) => String(s.run ?? "").includes("npx playwright test")))!;
+  expect(suite, "the suite job exists").toBeTruthy();
+  expect(suite.if, "a manual start needs the flag").toContain("inputs.e2e");
+  expect(String(suite.if), "and `workflow_dispatch` alone is not enough").not.toMatch(/event_name == 'workflow_dispatch'/);
+  expect(String(suite.if), "a pull request still runs it").toContain("pull_request");
+  const dispatch = ci.on.workflow_dispatch;
+  expect(dispatch?.inputs?.e2e?.default, "the flag defaults to false").toBe(false);
+  expect(dispatch?.inputs?.e2e?.type, "and is a boolean, so it is passed as -f e2e=true").toBe("boolean");
+  // The fast gate is unaffected: a manual start still gets the checks, and a push still gets them.
+  const check = Object.values(ci.jobs).find((j) => j.steps.some((s) => String(s.run ?? "").includes("npm run check")))!;
+  expect(check.if, "the check has no condition").toBeUndefined();
+  expect(ci.on.push.branches).toContain("main");
+});
+
 test("E15.53-1 the e2e suite is opt-in: it runs when the user asks, not after every change", () => {
   // Asked for 2026-11-21: "do not run e2e test by default, only run e2e test if I ask you to explicitly".
   // The rule is a standard, so it lives in AGENTS.md where an agent reads it before working — a correction
   // that has to be remembered is not yet a rule.
   const agents = readFileSync(join(ROOT_DIR, "AGENTS.md"), "utf8");
-  const step4 = agents.slice(agents.indexOf("4. **Do not run the e2e suite"), agents.indexOf("5. **Do not move on with a red case"));
+  // Compared as flowing text: a sentence is what is promised, not where the line happens to wrap (the same reason
+  // docs.spec.ts flattens the README). `/which cases were run/i` failed on a paragraph that says it, wrapped.
+  const step4 = agents.slice(agents.indexOf("4. **Do not run the e2e suite"), agents.indexOf("5. **Do not move on with a red case")).replace(/\s+/g, " ");
   expect(step4, "step 4 is the opt-in rule").not.toBe("");
   expect(step4).toMatch(/when the user asks/i);
   expect(step4).toMatch(/by default/i);
   // It is not a licence to go silent: a run that is asked for is reported in full.
   expect(step4, "the reporting duty survives").toMatch(/Phase results/i);
   expect(step4, "a report says what was not run").toMatch(/which cases were run/i);
+  // A manual start does not run the suite unless it asks: the recovery path for a dropped push is not a suite.
+  expect(step4, "a manual workflow start is not a way round the rule").toMatch(/gh workflow run ci/i);
+  expect(step4).toMatch(/-f e2e=true/);
   // And the old instruction — run the cases a change touches, after each change — is gone.
   expect(agents).not.toMatch(/Run only the e2e cases that the change touches/);
 

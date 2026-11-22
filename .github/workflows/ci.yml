@@ -23,7 +23,16 @@ on:
   # always produce a run — GitHub dropped the push events for this repository for a while on
   # 2026-11-20, and a gate that can only be reached by pushing is a gate nobody can reach when that
   # happens (task 15.30).
+  #
+  # `e2e` is **false** by default, and that is the point: a manual start is the recovery for a dropped
+  # push, and the person recovering a push does not want a 12-minute macOS suite behind their back —
+  # the same rule the push path follows (15.52, 15.53). Asked for it explicitly, `-f e2e=true`.
   workflow_dispatch:
+    inputs:
+      e2e:
+        description: "Also run the macOS e2e suite (a pull request runs it regardless; a manual start does not, unless this is true)"
+        type: boolean
+        default: false
 
 jobs:
   # TypeScript, ESLint (--max-warnings 0: it owns the boundary, timer and TODO rules) and the rules
@@ -57,7 +66,12 @@ jobs:
   # (asked for 2026-11-21). `gh workflow run ci` still runs it whenever that proof is wanted; the `check`
   # job above keeps running on every push, so a broken commit on `main` is still caught in a minute.
   e2e:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # A pull request runs it; so does a manual start, but **only** when `-f e2e=true` says so. It used to
+    # be every `workflow_dispatch`, which made the documented recovery for a dropped push event
+    # (task 15.30) start the suite — the one thing the standard forbids (found 2026-11-22, when exactly
+    # that happened: an agent dispatched `ci` to recover a push and got a 12-minute macOS run nobody
+    # asked for).
+    if: github.event_name == 'pull_request' || inputs.e2e == true
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
