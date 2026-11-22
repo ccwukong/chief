@@ -421,6 +421,36 @@ export function setStepModel(store: Store, runId: number, nodeId: string, model:
   return { run: r.run, node_id: nodeId, from: c ? c.from : target?.model ?? null, to: c ? c.to : target?.model ?? null, changed: r.changed };
 }
 
+/**
+ * The same model for several steps of a stopped run, in **one** call.
+ *
+ * Written for the case that made it necessary: every step of a run failed because it had no model and the CLI's
+ * default one was refused, so putting the steps right meant repeating the same edit once per step (run #51,
+ * 2026-11-22 — three steps, three rounds of "set the model, press Resume"). Doing it here rather than as three
+ * requests from the page is what makes it all-or-nothing: the steps are checked as a set first, so a model that
+ * one of them refuses cannot leave the others half changed.
+ */
+export function setModelForSteps(store: Store, runId: number, model: string | null, nodeIds: string[]) {
+  const wanted = [...new Set(nodeIds)];
+  if (!wanted.length) throw new EngineError("give the steps to change");
+  const run = store.getRun(runId);
+  if (!run) throw new EngineError(`run ${runId} not found`);
+  // Every named step must be one the run can change, checked before anything is written.
+  for (const nodeId of wanted) {
+    const last = store.latestNodeRun(runId, nodeId);
+    if (last?.status === "completed") throw new ConflictError(`step "${nodeId}" of run ${runId} has already completed and its result is kept: only steps that have not completed can be changed`);
+    const node: any = ((run.definition as any).nodes ?? []).find((n: any) => n.id === nodeId);
+    const inner = node?.type === "map" ? node.node : node;
+    if (!node || inner?.type !== "agent") throw new EngineError(`step "${nodeId}" is not an agent step, so it has no model to change`);
+  }
+  const changed: { node_id: string; from: string | null; to: string | null }[] = [];
+  for (const nodeId of wanted) {
+    const r = setStepModel(store, runId, nodeId, model);
+    if (r.changed) changed.push({ node_id: nodeId, from: r.from, to: r.to });
+  }
+  return { node_ids: wanted, changed };
+}
+
 /** A request that is valid but cannot be done in the current state (HTTP 409). */
 export class ConflictError extends EngineError {}
 

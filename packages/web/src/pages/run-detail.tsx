@@ -57,6 +57,15 @@ const ACTIONS = {
 } as const;
 /** Errors that mean the model's context window was too small for what the step had to read. */
 const CONTEXT_ERROR = /context (window|length|limit)|prompt is too long|too many tokens|maximum context|input (is )?too long|exceeds? (the )?(model'?s? )?(maximum )?context/i;
+/**
+ * Errors that mean the step's model — or the account behind it — was refused rather than the task going wrong.
+ *
+ * The case this is for: a step left on **"CLI default"** passes no `-m` at all, so the CLI uses whatever model its
+ * own configuration names, and that model can need an account token this machine does not have. Run #51 of
+ * `flight-weather-forecast` failed every agent step that way — "Personal Access Tokens are not supported for this
+ * endpoint" — and the page said only "This step failed", so the setting at fault was a guess (2026-11-22).
+ */
+const MODEL_AUTH_ERROR = /personal access token|third-party user token|invalid[_ ]?api[_ ]?key|no api key|api key|unauthorized|not authorized|authentication|not authenticated|please (sign|log) in|sign[- ]?in required|\b(401|403)\b/i;
 /** Run statuses in which a step that has not completed may be changed before resuming (see STOPPED_RUN in ops.ts). */
 const STOPPED = ["failed", "paused", "interrupted", "waiting_gate"];
 
@@ -268,6 +277,21 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
   };
   /** A top-level agent step that has not completed, in a run that is stopped: its model may be changed. */
   const changeable = (n: any) => n.parent_node_run_id == null && n.phase === "forward" && n.status !== "completed" && STOPPED.includes(s) && stepDef(n)?.type === "agent";
+  /**
+   * The other agent steps of this run that have no model of their own and have not finished.
+   *
+   * Those are the ones a model chosen here should reach: a step with no model inherits the CLI's own default, which
+   * is what was refused. Run #51 failed **one step at a time** — the first failure stopped the run, so the steps
+   * after it were still pending — and the same edit was made three times because fixing the step that failed left
+   * the ones after it unchanged (2026-11-22). A step that already names a model is left alone: that was a choice.
+   */
+  const unsetModelSteps = (n: any) => (run.definition?.nodes ?? [])
+    .filter((def: any) => {
+      const inner = def.type === "map" ? def.node : def;
+      return inner?.type === "agent" && def.id !== n.node_id && !inner.model;
+    })
+    .map((def: any) => def.id as string)
+    .filter((nodeId: string) => !(d.node_runs as any[]).some((r: any) => r.node_id === nodeId && r.status === "completed"));
 
   const row = (n: any, depth: number) => {
     const u = n.usage;
@@ -304,7 +328,11 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
         )}
         {open !== n.id && changeable(n) && n.status === "failed" && (
           <div data-testid={`node-failed-help-${n.id}`} className="px-3 pb-2 text-xs text-red-800" style={{ paddingLeft: 12 + depth * 24 }}>
-            {CONTEXT_ERROR.test(n.error ?? "") ? "This step ran out of room in the model's context window. " : "This step failed. "}
+            {CONTEXT_ERROR.test(n.error ?? "")
+              ? "This step ran out of room in the model's context window. "
+              : MODEL_AUTH_ERROR.test(n.error ?? "")
+                ? "This step's model or account was refused — a step left on the CLI's default model uses whatever that CLI is configured with, and that can need an account this machine is not signed in to. "
+                : "This step failed. "}
             <Button variant="ghost" className="text-primary underline" type="button" onClick={() => setOpen(n.id)}>Change its model</Button>, then press Resume: only this step and the ones after it run again.
           </div>
         )}
@@ -321,7 +349,8 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
             </div>
             {n.error && <div className="mb-2 whitespace-pre-wrap text-red-700" data-testid="node-error">{n.error}</div>}
             {changeable(n) && (
-              <StepEditor runId={id} nodeId={n.node_id} def={stepDef(n)} adapter={stepAdapter(n)} status={n.status} error={n.error} onSaved={load} current={currentStep(n.node_id)} />
+              <StepEditor runId={id} nodeId={n.node_id} def={stepDef(n)} adapter={stepAdapter(n)} status={n.status} error={n.error} onSaved={load} current={currentStep(n.node_id)}
+                unsetModelSteps={unsetModelSteps(n)} />
             )}
             {/* A prompt and what a step wrote are usually markdown: shown formatted, with the raw text one click away. */}
             <TextSection label={IN_LABEL[n.io?.input_kind] ?? "Input"} text={n.io?.input} testid="node-input" markdown={n.io?.input_kind === "prompt"} empty="(nothing recorded)"
@@ -516,7 +545,17 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
  * prompt (saved a moment after typing stops; kept as a draft until then, so a refresh loses
  * nothing). Each saved change is written to the run's record. See changeStep in ops.ts.
  */
-function StepEditor({ runId, nodeId, def, adapter, status, error, onSaved, current }: { runId: number; nodeId: string; def: any; adapter: string; status: string; error?: string | null; onSaved: () => void; current?: { version: number; prompt: string; model: string | null } | null }) {
+function StepEditor({ runId, nodeId, def, adapter, status, error, onSaved, current, unsetModelSteps = [] }: {
+  runId: number; nodeId: string; def: any; adapter: string; status: string; error?: string | null; onSaved: () => void;
+  current?: { version: number; prompt: string; model: string | null } | null;
+  /**
+   * The other agent steps of this run that have no model of their own and have not finished. A step with no model
+   * runs on the CLI's default, which is what gets refused; so one model chosen here can be given to all of them
+   * (run #51 needed the same edit three times, once per step, because the first failure stopped the run and left
+   * the rest pending).
+   */
+  unsetModelSteps?: string[];
+}) {
   const saved = String(def?.prompt ?? "");
   // What is typed is kept as a draft until it is saved, so a refresh loses nothing.
   const key = `run-step:${runId}:${nodeId}:prompt`;
@@ -548,6 +587,16 @@ function StepEditor({ runId, nodeId, def, adapter, status, error, onSaved, curre
       {status === "failed" && CONTEXT_ERROR.test(error ?? "") && (
         <p data-testid="step-context-hint" className="mb-2 text-sm text-amber-900">This step ran out of room in the model's context window. Pick a model with a larger context window, then press Resume. Completed steps keep their results; only this step and the ones after it run again.</p>
       )}
+      {/* The other failure class that is about a setting rather than the work: the model, or the account behind it.
+          "CLI default" is the usual cause — chief passes no model at all, so the CLI uses whatever its own
+          configuration names, which can need a sign-in this machine does not have. */}
+      {status === "failed" && MODEL_AUTH_ERROR.test(error ?? "") && (
+        <p data-testid="step-model-hint" className="mb-2 text-sm text-amber-900">
+          This step was refused by its model or account, not by the work. It ran on <b>{def?.model ?? "the CLI's default model"}</b>
+          {!def?.model && <> — and a CLI's default can need an account this machine is not signed in to</>}. Pick a model
+          here, then press Resume: only this step and the ones after it run again.
+        </p>
+      )}
       <ErrorBox error={problem} testid="step-model-error" />
       {newer && (
         <div data-testid="step-newer" className="mb-2 flex flex-wrap items-center gap-2 rounded border border-border bg-accent px-2 py-1.5 text-xs text-primary">
@@ -556,6 +605,27 @@ function StepEditor({ runId, nodeId, def, adapter, status, error, onSaved, curre
         </div>
       )}
       <ModelSelect adapter={adapter} value={def?.model} testid="step-model-select" onChange={(v) => void send({ model: v || null })} />
+      {/* One model for the steps that failed the same way. Shown only for the class of failure that a model
+          setting actually fixes, and only while this step has one chosen to copy. */}
+      {status === "failed" && MODEL_AUTH_ERROR.test(error ?? "") && unsetModelSteps.length > 0 && def?.model && (
+        <div data-testid="step-model-others" className="mb-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950">
+          <span>
+            {unsetModelSteps.length === 1 ? "One more step of this run has" : `${unsetModelSteps.length} more steps of this run have`} no model
+            of their own ({unsetModelSteps.join(", ")}), so they would run on the CLI's default and be refused the same way.
+          </span>
+          <AsyncButton data-testid="step-model-others-apply" variant="outline" className="border-amber-400 px-2 py-1 text-xs"
+            onClick={async () => {
+              setProblem(null);
+              try {
+                // One call, so the steps cannot end up half changed.
+                await api("POST", `/api/runs/${runId}/steps/model`, { model: def.model, nodes: unsetModelSteps });
+                onSaved();
+              } catch (e: any) { setProblem(e.message); }
+            }}>
+            Use {def.model} for {unsetModelSteps.length === 1 ? "it" : "them"} too
+          </AsyncButton>
+        </div>
+      )}
       <label className="mb-1 block">
         <span className="label">Prompt for this run</span>
         <Textarea data-testid="step-prompt" rows={6} className="mono text-xs" value={prompt} onChange={(e) => setPrompt(e.target.value)} />

@@ -6,6 +6,51 @@ refactor, a test) is listed only when it changes what the app does or what a run
 The version is in `packages/desktop/package.json`; the app's About panel reads it from there, and the
 landing page and the release notes take it from the same place.
 
+## [0.3.0] — 2026-11-22
+
+### Added
+
+- **A step refused for its model says so, and one model can be set for every step that needs one.** A step
+  left on **"CLI default"** passes no model at all, so the CLI uses whatever its own configuration names —
+  and that model can need an account this machine is not signed in to. Every step of a run can fail that
+  way, one after another, because a failure stops the run and leaves the rest pending. The page now says
+  the model or account was refused (rather than "this step failed") and names what it ran on; and once you
+  pick a model for one step, **Use it for them too** gives the same model to every agent step of that run
+  that has none, in one go.
+- **Schedules you can edit and quote.** The `when` and the `inputs` are fields in the row, saved when you
+  leave them — no Save button — and each row shows its number (`#3`), which is what you quote to chief bot:
+  "move #3 to 18:00", "pause #3", "remove #3".
+- **chief bot removes schedules**, and writes the JSON inputs a run needs from the sentence — *"every
+  weekday at 10am for the payments team"* is a schedule with `{"team": "payments"}`, checked like one added
+  by hand.
+- **A long conversation with chief bot is compacted, not cut off.** Past a budget (Settings › chief bot,
+  100k tokens by default) chief has the conversation summarised and starts a fresh session with those
+  notes, and says on that answer that it compacted. Nothing is lost.
+- **Past conversations are a dropdown, and one can be deleted.** The clock in the bot's header opens a menu
+  over the thread; each row has a bin that deletes that conversation and its messages, after asking.
+
+### Changed
+
+- **Removing anything is the same small bin.** A run, a schedule, a step, a connection, a workflow and a
+  conversation all go with a grey bin glyph that turns red on hover, with the weight in the confirmation.
+  The filled red bars are gone.
+- **A run's steps are tabs**, one step's prompt and result at a time, with its status on the tab; the step
+  waiting for an answer is the tab that is open, and a line above says where a question is if you are
+  reading another.
+- **A run's page has one record.** The replay and the event log were the same facts twice; the log is gone
+  and each entry says what the event reported.
+
+### Fixed
+
+- **A suggestion in chief bot wraps** instead of running under the column beside the panel.
+- **"Your changes were restored" is gone**, with the Discard button that threw the working copy away
+  without asking. The draft itself is still kept exactly as before.
+- **The "Not started" tab opens while a step is waiting**, and the waiting banner reads "answer in: ask".
+- **The landing page tells the truth about installing.** The app cannot clear its own quarantine flag on an
+  unsigned build — Gatekeeper decides before any of its code runs — so the page now leads with System
+  Settings → **Open Anyway**, offers the `curl` installer that leaves no flag to set, and keeps `xattr` as
+  the shortcut. Its cards also keep their text inside them.
+
 ## [0.2.9] — 2026-11-22
 
 ### Fixed

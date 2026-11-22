@@ -8,7 +8,7 @@ import { enabledProviders, providerChosenOff, providerLocated } from "../provide
 import { askAboutRun, askAdapter, askConversation, assistantAdapterFor, assistantAnswer, assistantActions, assistantConversation, assistantTooling, cancelAssistantAnswer } from "../ask.ts";
 import { answerGate, driveRun, EngineError, requestCancel, requestPause, rerunRun, resumeRun, startRun } from "../engine/engine.ts";
 import { revertRun } from "../engine/saga.ts";
-import { addSchedule, approveWorkflow, cloneWorkflow, ConflictError, deleteRuns, doctor, ensureMcp, knownFolders, listModels, refreshMcp, pendingApprovals, refinePrompt, runDetail, changeStep, setStepModel, saveDefinition, setSchedule, validateFull } from "../ops.ts";
+import { addSchedule, approveWorkflow, cloneWorkflow, ConflictError, deleteRuns, doctor, ensureMcp, knownFolders, listModels, refreshMcp, pendingApprovals, refinePrompt, runDetail, changeStep, setModelForSteps, setStepModel, saveDefinition, setSchedule, validateFull } from "../ops.ts";
 import { log, logDebug, logging } from "../log.ts";
 import { defaultWorkspace } from "../paths.ts";
 import { runProcess } from "../util/proc.ts";
@@ -518,6 +518,18 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
     const runId = id(c.req.param("id"), "run id");
     const r = setStepModel(store, runId, c.req.param("node"), b.model == null ? null : String(b.model));
     return c.json({ from: r.from, to: r.to, changed: r.changed, ...runDetail(store, runId) });
+  });
+  /**
+   * The same model for several steps at once: { model, nodes: [...] }. One call, so it cannot leave some steps
+   * changed and others not (the "every step failed on the CLI's default model" case, run #51).
+   */
+  app.post("/api/runs/:id/steps/model", async (c) => {
+    const b = await body(c);
+    const runId = id(c.req.param("id"), "run id");
+    if (!Array.isArray(b.nodes) || !b.nodes.length) throw new EngineError("give `nodes`: the steps to change");
+    if (!("model" in b)) throw new EngineError("give the `model` to use (null for the CLI's own default)");
+    const r = setModelForSteps(store, runId, b.model == null || b.model === "" ? null : String(b.model), b.nodes.map(String));
+    return c.json({ ...r, ...runDetail(store, runId) });
   });
   /** Change a step of a stopped run that has not completed: { model?, prompt? }. For this run only. */
   app.post("/api/runs/:id/steps/:node", async (c) => {
