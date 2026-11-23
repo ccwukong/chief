@@ -92,13 +92,37 @@ function createWindow() {
   w.on("resize", later);
   w.on("move", later);
   w.on("closed", () => { win = null; });
-  // Closing the window hides it and leaves chief running. Quit (⌘Q) is what stops the server.
-  w.on("close", (e) => {
-    if (quitting) return;
-    e.preventDefault();
+  /**
+   * Hide the window and leave chief running. Quit (⌘Q) is what stops the server.
+   *
+   * On macOS a window in **native fullscreen** does not live on the desktop: it has a Space of its own, and
+   * `hide()` on a window inside that Space leaves the Space there with nothing drawn in it — a black screen
+   * that only Quit gets rid of (reported 2026-11-23: *"why everytime i closed the chief desktop app from the
+   * fullscreen mode, it just shows a black screen"*). So the Space has to be given up **first**, and the window
+   * hidden after macOS has finished the transition: `setFullScreen(false)` is asynchronous and returns
+   * immediately, so hiding straight after it hides a window that is still in the Space.
+   */
+  const hideToBackground = () => {
     w.hide();
     void saveBounds();
     log.note("window closed; chief keeps running in the background (runs and schedules continue until Quit)");
+  };
+  let leavingFullScreen = false;
+  w.on("close", (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    if (leavingFullScreen) return; // a second ⌘W while the Space is closing is not a second close
+    if (!w.isFullScreen()) { hideToBackground(); return; }
+    leavingFullScreen = true;
+    // The animation takes a moment. The listener is `once` and also catches the case macOS drops the window out
+    // of the Space on its own.
+    w.once("leave-full-screen", () => {
+      leavingFullScreen = false;
+      // The window may have been asked to quit while the Space was closing.
+      if (!win || win.isDestroyed() || quitting) return;
+      hideToBackground();
+    });
+    w.setFullScreen(false);
   });
   const wc = w.webContents;
   wc.on("did-navigate", (_e, url) => remember(url));

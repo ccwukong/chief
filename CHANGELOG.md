@@ -6,6 +6,15 @@ refactor, a test) is listed only when it changes what the app does or what a run
 The version is in `packages/desktop/package.json`; the app's About panel reads it from there, and the
 landing page and the release notes take it from the same place.
 
+## [0.3.1] — 2026-11-23
+
+### Fixed
+
+- **Closing the window from fullscreen no longer leaves a black screen.** On macOS a window in native
+  fullscreen has a Space of its own, and hiding it there left the Space behind with nothing drawn in it —
+  permanently, until Quit. Closing now gives up the Space first and hides once the transition is done.
+  Closing is still not quitting: runs and schedules carry on.
+
 ## [0.3.0] — 2026-11-22
 
 ### Added

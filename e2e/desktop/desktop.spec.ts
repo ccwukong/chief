@@ -467,6 +467,32 @@ test("E15.3-1 closing the window keeps chief, its runs and its scheduler alive u
   await expect.poll(() => alive(sidecar), { timeout: 15_000 }).toBe(false);
   expect(d.log()).toContain("quitting with 1 run(s) in progress");
 });
+test("E15.112-1 closing the window from fullscreen gives up the Space and hides the window", async ({ desktop }) => {
+  // Reported 2026-11-23: *"why everytime i closed the chief desktop app from the fullscreen mode, it just shows a
+  // black screen … the close button should close the window instead of showing a black screen"*. On macOS a window
+  // in native fullscreen owns a Space of its own, and hiding it there leaves the Space with nothing drawn in it.
+  // The window has to leave fullscreen **first**, and the hide waits for macOS to finish the transition.
+  const d = await desktop.launch();
+  const winState = () => d.app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    return { full: w.isFullScreen(), visible: w.isVisible(), destroyed: w.isDestroyed() };
+  });
+  await d.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));
+  // The transition is asynchronous; wait for it rather than for a timer.
+  await expect.poll(winState, { timeout: 15_000 }).toMatchObject({ full: true, visible: true });
+
+  await d.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  // Out of the Space **and** hidden: with the old close path the window stayed fullscreen, which is the black screen.
+  await expect.poll(winState, { timeout: 15_000 }).toEqual({ full: false, visible: false, destroyed: false });
+  // Closing is still not quitting: the server answers and the app is alive.
+  expect((await d.api("/api/meta")).api, "the server still answers").toBeGreaterThan(0);
+
+  // The Dock icon brings it back — at a normal size, because the Space was given up rather than hidden inside.
+  await d.app.evaluate(({ app }) => app.emit("activate"));
+  await expect.poll(winState, { timeout: 15_000 }).toMatchObject({ full: false, visible: true });
+  expect(d.page.url()).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+});
+
 test("E10.8-1 the development loop runs chief, not Electron, in the menu bar and the Dock", async ({ desktop }) => {
   // macOS names the app menu and the Dock icon from the bundle, never from `app.setName` (src/main.ts), so
   // the loop launches a copy of Electron.app renamed chief, with chief's icon.
