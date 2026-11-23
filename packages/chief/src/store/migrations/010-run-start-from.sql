@@ -1,0 +1,11 @@
+-- A run can continue another run **from a step**, instead of from the beginning (asked 2026-11-23: *"a full rerun of a
+-- workflow run everytime is waste of token and time, can we have an option to run from a certain step onwards only?"*).
+--
+-- The step it starts at is recorded on the run, not derived from which steps have attempts: the first pass creates attempts,
+-- so "the first step with no attempt yet" changes as the run goes and a second pass would decide differently. It is a fact
+-- about the run, so it is a column.
+--
+-- The steps **before** it are not recorded at all: they are the steps that come before it in the workflow's order, which is
+-- what the engine already knows, and a list of them here would be a second copy to keep true. What the run did with them is
+-- recorded as it always is — none of them got an attempt, and their results came from the run named by `parent_run_id`.
+ALTER TABLE run__runs ADD COLUMN start_from TEXT;

@@ -30,6 +30,8 @@ export interface RunRow {
   id: number; workflow_id: number; workflow_version: number; definition: any; base_dir: string | null;
   status: RunStatus; inputs: any; budget: { "warn-usd"?: number; "max-usd"?: number } | null;
   requested_action: "pause" | "cancel" | null; owner_pid: number | null; parent_run_id: number | null;
+  /** The step a partial rerun of another run starts at; null for an ordinary run (see 010-run-start-from). */
+  start_from: string | null;
   tokens_in: number; tokens_out: number; cost_usd: number; error: string | null;
   created_at: string; started_at: string | null; finished_at: string | null;
 }

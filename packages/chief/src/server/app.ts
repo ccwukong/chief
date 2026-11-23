@@ -496,7 +496,10 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
     const target = store.getWorkflow(old.workflow_id);
     if (target?.base_dir) { try { mkdirSync(target.base_dir, { recursive: true }); } catch { /* reported by the run if it matters */ } }
     if (target) await ensureMcp(store, target.definition, target.base_dir ?? process.cwd());
-    const run = rerunRun(store, old.id);
+    // `from`: start at that step, keeping the earlier run's results for the steps before it (the body is optional, so a
+    // rerun with no body is a full rerun as before).
+    const b = await c.req.json().catch(() => ({}));
+    const run = rerunRun(store, old.id, b?.from == null || b.from === "" ? null : String(b.from));
     launch(run.id);
     return c.json(runDetail(store, run.id), 201);
   });

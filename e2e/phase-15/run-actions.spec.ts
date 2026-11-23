@@ -128,3 +128,72 @@ test("E15.90-2 a run in flight has no Resume, and a finished one has no Pause or
     await srv.stop();
   }
 });
+
+test("E15.117-1 a run can be run again from a step onwards, keeping the earlier steps' results", async ({ chief, page }) => {
+  // Asked 2026-11-23: *"a full rerun of a workflow run everytime is waste of token and time, can we have an option to run from
+  // a certain step onwards only?"*. A chain of three agent steps, so "from two" has exactly one step before it and one after.
+  chief.importWorkflow(`name: chain
+nodes:
+  - { id: one, type: agent, mcp: [], prompt: 'ONE ${fake({ output: { value: "from-one" } })}' }
+  - { id: two, type: agent, mcp: [], prompt: 'TWO reads {{nodes.one.output.value}} ${fake({ output: { value: "from-two" } })}' }
+  - { id: three, type: agent, mcp: [], prompt: 'THREE reads {{nodes.two.output.value}} ${fake({ output: { ok: 1 } })}' }
+edges: [one -> two, two -> three]
+`);
+  const srv = await chief.serve();
+  try {
+    await page.setViewportSize({ width: 1400, height: 950 });
+    const first = await srv.api("POST", "/api/runs", { workflow: "chain", inputs: {} });
+    const id = first.body.run.id as number;
+    await expect.poll(async () => (await srv.api("GET", `/api/runs/${id}`)).body.run.status, { timeout: 30_000 }).toBe("completed");
+    const callsBefore = chief.calls().length;
+
+    // The button is unchanged, and a caret beside it offers where to start — never the first step, which is a full rerun.
+    await page.goto(`${srv.url}/#/runs/${id}`);
+    await expect(tid(page, "btn-rerun")).toHaveText("Run again — new run");
+    await tid(page, "btn-rerun-menu").click();
+    const menu = tid(page, "rerun-menu");
+    await expect(menu).toContainText("keep the results they returned in this run");
+    await expect(tid(page, "rerun-from-two")).toContainText("two");
+    await expect(tid(page, "rerun-from-one"), "the first step is the button itself").toHaveCount(0);
+
+    // From step two: a new run that runs two and three and takes one from the earlier run.
+    // The new run's page, which is a different run: wait for the address to change, not for a URL that matches the page it
+    // is already on (`/runs/1` matches the pattern too, so reading it immediately gave this run's own id).
+    await tid(page, "rerun-from-two").click();
+    await expect(page).not.toHaveURL(new RegExp(`/runs/${id}$`));
+    await expect(page).toHaveURL(/\/runs\/\d+$/);
+    const id2 = Number(page.url().split("/").pop());
+    expect(id2).not.toBe(id);
+    await expect.poll(async () => (await srv.api("GET", `/api/runs/${id2}`)).body.run.status, { timeout: 30_000 }).toBe("completed");
+
+    // What it ran, read from the record: two agent calls instead of three, and no attempt for `one`.
+    const ran = chief.calls().slice(callsBefore);
+    expect(ran.length, "two steps ran, not three").toBe(2);
+    const detail = (await srv.api("GET", `/api/runs/${id2}`)).body;
+    expect(detail.run.start_from).toBe("two");
+    expect(detail.run.parent_run_id).toBe(id);
+    expect(detail.node_runs.map((n: any) => n.node_id)).toEqual(["two", "three"]);
+    // Its results are the earlier run's, so the step that ran second read what the first returned there.
+    expect(JSON.stringify(detail.node_runs[0].io.input)).toContain("from-one");
+    // And the record says where the kept results came from, on the step the run starts at.
+    const transcript = (await srv.api("GET", `/api/runs/${id2}/transcript`)).body as any[];
+    const note = transcript.find((m) => m.kind === "resumed_from");
+    expect(note?.node_id).toBe("two");
+    expect(note?.content).toContain(`run #${id}'s`);
+
+    // The menu is gone when there is only one step to start at: a one-step workflow has no choice to offer.
+    chief.importWorkflow(`name: solo\nnodes:\n  - { id: only, type: agent, prompt: 'S ${fake({ output: { ok: 1 } })}' }\n`);
+    const solo = await srv.api("POST", "/api/runs", { workflow: "solo", inputs: {} });
+    await expect.poll(async () => (await srv.api("GET", `/api/runs/${solo.body.run.id}`)).body.run.status, { timeout: 30_000 }).toBe("completed");
+    await page.goto(`${srv.url}/#/runs/${solo.body.run.id}`);
+    await expect(tid(page, "btn-rerun")).toBeVisible();
+    await expect(tid(page, "btn-rerun-menu"), "one step: nothing to choose").toHaveCount(0);
+
+    // And the server refuses a start point that is not a step, so a stale menu cannot start something wrong.
+    const bad = await srv.api("POST", `/api/runs/${id}/rerun`, { from: "nope" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain("is not a step");
+  } finally {
+    await srv.stop();
+  }
+});

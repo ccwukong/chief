@@ -28,7 +28,8 @@ Usage: chief <command> [options]        (add --json to any command for machine-r
            archive <name> | unarchive <name>   take it out of every list, keep its runs; rm needs no runs
   run <workflow> [--input k=v | --input a.b=v]... [--inputs-json <json>] [--warn-usd n] [--max-usd n]
   runs list [--workflow <name>] [--limit n] [--offset n] | show <id> | tail <id> [--follow]
-  runs rerun <id>                         run a run again: a new run of its workflow with the inputs it ran with
+  runs rerun <id> [--from <step>]         run a run again: a new run of its workflow with the inputs it ran with,
+                                          or from a step on, keeping the earlier results of the steps before it
   runs rm <id...>                         delete finished runs and everything recorded for them
   runs set-model <run> <step> <model|default>  change a step's model for this run while it is stopped, then resume
   runs set-prompt <run> <step> <text|file>     change a step's prompt for this run while it is stopped, then resume
@@ -335,8 +336,13 @@ async function main(): Promise<number> {
         const target = store.getWorkflow(old.workflow_id);
         if (target?.base_dir) { try { mkdirSync(target.base_dir, { recursive: true }); } catch { /* reported by the run if it matters */ } }
         if (target) await ensureMcp(store, target.definition, target.base_dir ?? process.cwd());
-        const run = rerunRun(store, old.id);
-        if (!asJson) out(`started run ${run.id} (run ${old.id} again)`);
+        // `--from <step>`: start at that step and take the steps before it from the run this one continues (15.117). A
+        // script that wants the saving needs it as much as the page does.
+        // `--from` is parsed off argv by `parseArgs`, so it arrives in `flags`: it is never in `rest`, and the first
+        // version that looked for it there silently ran the whole workflow again.
+        const from = typeof args.flags.from === "string" ? args.flags.from.trim() || null : null;
+        const run = rerunRun(store, old.id, from);
+        if (!asJson) out(from ? `started run ${run.id} (run ${old.id} again, from step "${from}")` : `started run ${run.id} (run ${old.id} again)`);
         const done = await driveRun(store, run.id);
         printRun(store, run.id);
         return exitCodeFor(done);

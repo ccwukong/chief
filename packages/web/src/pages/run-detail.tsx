@@ -188,11 +188,19 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
   };
 
   /** Run again: a new run of the same workflow with this run's inputs; the page goes to it. */
-  const rerun = async () => {
+  /**
+   * Run again: a new run of the same workflow with this run's inputs.
+   *
+   * `from` starts it at that step, keeping this run's results for the steps before it instead of spending tokens and time on
+   * them again (asked 2026-11-23: *"a full rerun of a workflow run everytime is waste of token and time"*). The choice is a
+   * menu under the button rather than a second control: "run again" is one action, and where to start is how it is run.
+   */
+  const rerun = async (from?: string) => {
     setError(null);
-    try { const r = await api("POST", `/api/runs/${id}/rerun`); go(`/runs/${r.run.id}`); }
+    try { const r = await api("POST", `/api/runs/${id}/rerun`, from ? { from } : {}); go(`/runs/${r.run.id}`); }
     catch (e: any) { setError(e.message); }
   };
+  const [rerunMenu, setRerunMenu] = useState(false);
 
   if (!d) return <div className="p-6"><ErrorBox error={error} />Loading…</div>;
   const { run } = d;
@@ -276,6 +284,14 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
     reveal(target); // scrolls after the row is rendered, instead of racing it with a zero-delay timer
   };
   /** A top-level agent step that has not completed, in a run that is stopped: its model may be changed. */
+  /**
+   * The steps this run has results for, in the workflow's order: where a partial rerun can start. Starting at the first of
+   * them is a full rerun, so the menu offers the second onwards.
+   */
+  const rerunFrom = ((): string[] => {
+    const done = new Set((d.node_runs as any[]).filter((n: any) => n.status === "completed").map((n: any) => n.node_id));
+    return (run.definition?.nodes ?? []).map((n: any) => String(n.id)).filter((id: string) => done.has(id));
+  })();
   const changeable = (n: any) => n.parent_node_run_id == null && n.phase === "forward" && n.status !== "completed" && STOPPED.includes(s) && stepDef(n)?.type === "agent";
   /**
    * The other agent steps of this run that have no model of their own and have not finished.
@@ -378,7 +394,35 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
         <div className="flex flex-wrap gap-2 sm:ml-auto" data-testid="run-actions" data-state={s}>
           {shows("pause") && <AsyncButton data-testid="btn-pause" variant="outline" disabled={run.requested_action === "pause"} onClick={() => act("pause")}>{run.requested_action === "pause" ? "Pausing…" : "Pause"}</AsyncButton>}
           {shows("resume") && <AsyncButton data-testid="btn-resume" variant="outline" onClick={resume}>Resume</AsyncButton>}
-          {shows("rerun") && <AsyncButton data-testid="btn-rerun" variant="outline" title="Start a new run of this workflow with the inputs this run ran with. This run stays as it is" onClick={rerun}>Run again — new run</AsyncButton>}
+          {shows("rerun") && (
+            <span className="relative">
+              <AsyncButton data-testid="btn-rerun" variant="outline" title="Start a new run of this workflow with the inputs this run ran with. This run stays as it is" onClick={() => void rerun()}>Run again — new run</AsyncButton>
+              {/* A caret beside it, not a second action: the menu is where the run starts, and "from the beginning" is the
+                  button itself. Offered only when there is a later step to start at — one step is no choice.
+                  A kept result means the step is not run again, so the menu says what it saves. */}
+              {rerunFrom.length > 1 && (
+                <>
+                  <Button variant="outline" type="button" data-testid="btn-rerun-menu" aria-label="Run again from a step" aria-expanded={rerunMenu}
+                    className="ml-1 h-9 px-1.5" onClick={() => setRerunMenu((v) => !v)}>
+                    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 6.5l4 4 4-4" /></svg>
+                  </Button>
+                  {rerunMenu && (
+                    <div data-testid="rerun-menu" className="absolute right-0 top-full z-30 mt-1 w-80 rounded-md border border-border bg-surface p-1 shadow-lg">
+                      <div className="px-2 py-1 text-2xs text-slate-500">Run again from a step: the steps before it keep the results they returned in this run and are not run again.</div>
+                      {rerunFrom.slice(1).map((nodeId: string) => (
+                        <Button key={nodeId} variant="ghost" type="button" data-testid={`rerun-from-${nodeId}`}
+                          className="h-auto w-full justify-start px-2 py-1.5 text-left text-xs"
+                          onClick={() => { setRerunMenu(false); void rerun(nodeId); }}>
+                          <span className="min-w-0 flex-1 truncate">from <b>{nodeId}</b></span>
+                          <span className="shrink-0 text-2xs text-slate-500">after {rerunFrom.slice(0, rerunFrom.indexOf(nodeId)).join(", ")}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </span>
+          )}
           {shows("cancel") && <AsyncButton data-testid="btn-cancel" variant="destructive" disabled={run.requested_action === "cancel"} onClick={() => act("cancel")}>{run.requested_action === "cancel" ? "Cancelling…" : "Cancel"}</AsyncButton>}
           {/* A bin, not a filled red bar: the header is navigation and state, and a destructive action should not be the
               loudest thing in it. The confirmation names the run and says it cannot be undone, which is where the weight

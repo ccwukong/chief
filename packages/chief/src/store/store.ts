@@ -230,10 +230,10 @@ export class Store {
   }
 
   // ── runs ────────────────────────────────────────────────────────────────
-  createRun(wf: WorkflowRow, inputs: any, budget: any, parentRunId: number | null = null): RunRow {
+  createRun(wf: WorkflowRow, inputs: any, budget: any, parentRunId: number | null = null, startFrom: string | null = null): RunRow {
     const id = this.insert(
-      "INSERT INTO run__runs (workflow_id, workflow_version, definition_json, base_dir, inputs_json, budget_json, parent_run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [wf.id, wf.version, j(wf.definition), wf.base_dir, j(inputs ?? {}), j(budget ?? null), parentRunId, now()],
+      "INSERT INTO run__runs (workflow_id, workflow_version, definition_json, base_dir, inputs_json, budget_json, parent_run_id, start_from, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [wf.id, wf.version, j(wf.definition), wf.base_dir, j(inputs ?? {}), j(budget ?? null), parentRunId, startFrom, now()],
     );
     return this.getRun(id)!;
   }

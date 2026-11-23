@@ -64,7 +64,11 @@ export function buildScope(ctx: Ctx, extra: Record<string, unknown> = {}) {
   // `output` is the step's JSON result; `reply` is what an agent wrote besides it.
   const nodes: Record<string, { output: any; reply: string }> = {};
   for (const n of ctx.def.nodes) {
-    const nr = ctx.store.latestNodeRun(ctx.runId, n.id);
+    // A step of this run if it has run, otherwise — and only for a **partial rerun** — the result the earlier run recorded
+    // (see rerunRun). The value is the earlier run's: it is not copied in, not attributed to this run, and the step's own
+    // record here links to run #N, which is where the reader goes to see what it produced.
+    const here = ctx.store.latestNodeRun(ctx.runId, n.id);
+    const nr = here?.status === "completed" ? here : parentResult(ctx, n.id);
     if (nr?.status === "completed") nodes[n.id] = { output: nr.output, reply: typeof nr.state?.reply === "string" ? nr.state.reply : "" };
   }
   return {
@@ -73,6 +77,14 @@ export function buildScope(ctx: Ctx, extra: Record<string, unknown> = {}) {
     nodes,
     ...extra,
   };
+}
+
+/** The attempt of the run this one continues (`parent_run_id`) for a step, when it completed there. */
+function parentResult(ctx: Ctx, nodeId: string): NodeRunRow | null {
+  const parentId = getRun(ctx).parent_run_id;
+  if (!parentId) return null;
+  const nr = ctx.store.latestNodeRun(parentId, nodeId);
+  return nr?.status === "completed" ? nr : null;
 }
 
 function renderOpts(ctx: Ctx, nr: NodeRunRow | null): RenderOptions {
