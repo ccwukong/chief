@@ -67,6 +67,11 @@ asks GitHub whether a newer release exists (turn that off with `CHIEF_NO_UPDATE_
 else that leaves your machine is what your agent CLI or an MCP server sends, to services you are already
 signed in to. More in [README.md](README.md#the-desktop-app-macos).
 
+That is about the app. **This website is separate from it**: it counts visits with **Cloudflare Web
+Analytics**, which sets no cookie, stores nothing in your browser and builds no profile of you, so there is
+no consent banner to dismiss. It tells the maintainer how many people read the page and roughly where they
+came from. Nothing you do inside chief reaches it.
+
 ## 8. Contributions
 
 Contributions are welcome under the same licence and the contributor grant described in
