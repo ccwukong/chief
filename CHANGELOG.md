@@ -6,6 +6,8 @@ refactor, a test) is listed only when it changes what the app does or what a run
 The version is in `packages/desktop/package.json`; the app's About panel reads it from there, and the
 landing page and the release notes take it from the same place.
 
+## [Unreleased]
+
 ## [0.3.1] — 2026-11-23
 
 ### Fixed

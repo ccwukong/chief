@@ -106,6 +106,14 @@ nodes:
   expect(chief.calls()[1].prompt).toContain("Review again https://x/pull/7 in my-org/app");
   // The record of the new run says what it is.
   expect(chief.run(["runs", "replay", String(d.run.id), "--full"]).stdout).toContain(`Run ${first.json().run.id} run again`);
+  // `--from <step>`: start at that step, recording the start point and the run it continues (15.117). One step here, so
+  // nothing is kept — what this asserts is that the flag is read (it was silently ignored at first) and refused when it
+  // names no step; the skipping itself is E15.117-1's.
+  const from = chief.run(["runs", "rerun", String(first.json().run.id), "--from", "review", "--json"]);
+  expect(from.code, from.stdout + from.stderr).toBe(0);
+  expect(from.json().run.start_from).toBe("review");
+  expect(from.json().run.parent_run_id).toBe(first.json().run.id);
+  expect(chief.run(["runs", "rerun", String(first.json().run.id), "--from", "nope"]).code).toBe(1);
   // Over the API, and for a run that does not exist.
   expect(chief.run(["runs", "rerun", "999"]).code).toBe(1);
 });
@@ -122,6 +130,14 @@ test("E9.61-2 the API runs a run again", async ({ chief }) => {
     expect(again.body.run.inputs).toEqual({ who: "everyone" });
     await chief.until(async () => (await s.api("GET", `/api/runs/${again.body.run.id}`)).body.run.status === "completed");
     expect(chief.calls()[1].prompt).toContain("hello everyone");
+    // `from`: the start point is recorded, and a step that is not one is refused rather than guessed at (15.117).
+    const from = await s.api("POST", `/api/runs/${first.body.run.id}/rerun`, { from: "a" });
+    expect(from.status).toBe(201);
+    expect(from.body.run.start_from).toBe("a");
+    expect(from.body.run.parent_run_id).toBe(first.body.run.id);
+    const bad = await s.api("POST", `/api/runs/${first.body.run.id}/rerun`, { from: "nope" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain("is not a step");
     expect((await s.api("POST", "/api/runs/999/rerun")).status).toBe(404);
   } finally { await s.stop(); }
 });

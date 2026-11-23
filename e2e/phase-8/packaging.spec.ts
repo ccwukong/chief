@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, fake, ROOT_DIR, test } from "../helpers";
 
@@ -27,7 +27,7 @@ test("E8.4-1 the build produces one chief bundle that runs on Node", () => {
   expect(st.size).toBeGreaterThan(1 * 1024 * 1024);
   expect(readFileSync(BIN, "utf8").startsWith("#!/usr/bin/env node"), "the bundle starts with a node shebang");
   // The SQL migrations are read at startup and are copied beside the bundle.
-  for (const m of ["001-init", "005-assistant"]) expect(existsSync(join(ROOT_DIR, "e2e/.tmp/_bin/migrations", `${m}.sql`)), m).toBe(true);
+  for (const m of ["001-init", "010-run-start-from"]) expect(existsSync(join(ROOT_DIR, "e2e/.tmp/_bin/migrations", `${m}.sql`)), m).toBe(true);
   // The generated asset module must not be left behind (the dev server would serve stale files).
   expect(existsSync(join(ROOT_DIR, "packages/chief/src/server/web-assets.generated.ts"))).toBe(false);
 });
@@ -37,7 +37,8 @@ test("E8.4-2 the executable works on its own: doctor, import, run", ({ chief }) 
   const run = (args: string[]) => spawnSync(process.execPath, [BIN, ...args], { cwd: chief.dir, env: chief.env, encoding: "utf8" });
   const doc = run(["doctor", "--json"]);
   expect(doc.status, doc.stdout + doc.stderr).toBe(0);
-  expect(JSON.parse(doc.stdout)).toMatchObject({ ok: true, db: { ok: true, latest: "005-assistant" }, sandbox: { available: true } });
+  const latest = readdirSync(join(ROOT_DIR, "packages/chief/src/store/migrations")).filter((f) => f.endsWith(".sql")).sort().at(-1)!.replace(/\.sql$/, "");
+  expect(JSON.parse(doc.stdout)).toMatchObject({ ok: true, db: { ok: true, latest }, sandbox: { available: true } });
 
   chief.file("double.py", "import json,sys\nprint(json.dumps({'n': json.load(sys.stdin)['n'] * 2}))\n");
   const wf = chief.file("standalone.yaml", `

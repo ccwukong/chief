@@ -1,5 +1,4 @@
 import type { Page } from "@playwright/test";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { expect, fake, FAKE_ANTIGRAVITY, FAKE_CODEX, FAKE_CURSOR, FAKE_OPENCODE, ROOMY_LAYOUT_KEYS, ROOT_DIR, showStep, test as base, type Server, roomyLayout } from "../helpers";
@@ -1077,7 +1076,7 @@ test("E9.15-1 the server list says which agent CLI is connected to which server"
   expect(await used("claude-code")).toEqual([]);
   expect(await used("codex")).toEqual(["github"]);
   await tid(page, "node-mcp-all").uncheck();
-  await expect(page.locator('[data-testid="node-mcp"] input')).toHaveCount(2);
+  await expect(page.locator('[data-testid="node-mcp"] [role="checkbox"]')).toHaveCount(2);
   await expect(tid(page, "node-mcp-github")).toBeVisible();
   await expect(tid(page, "node-mcp-slack")).toHaveCount(0);
   await tid(page, "node-mcp-github").check();
@@ -1139,24 +1138,29 @@ edges: [summarise -> double, double -> confirm, confirm -> each]
   await tid(page, "gate-approve").click();
   await expect(tid(page, "run-status")).toHaveText("completed");
   await expect(tid(page, `node-out-${g}`)).toContainText('"value": "Database failover at 03:12, resolved."');
-  // Map children each show their own item.
+  // Map children each show their own item, in the map's own tab (a child has no tab of its own).
+  await showStep(page, "each");
   const c0 = await idOf("each-item", "0"), c1 = await idOf("each-item", "1");
   await expect(tid(page, `node-in-${c0}`)).toContainText("handle alpha");
   await expect(tid(page, `node-in-${c1}`)).toContainText("handle beta");
   await expect(tid(page, `node-out-${c1}`)).toContainText('"handled": true');
 
   // The compact view is cut short; clicking the node shows the full input, the answer and the output.
+  await showStep(page, "summarise");
   await expect(tid(page, `node-in-${a}`)).not.toContainText("Output contract");
   await tid(page, `node-io-${a}`).click();
   await expect(tid(page, "node-input")).toContainText("Output contract (required by the orchestrator running you)");
   await tid(page, "node-output-json").click();
   await expect(tid(page, "node-output")).toContainText('"count": 21');
+  await showStep(page, "confirm");
   await row("confirm").click();
   await expect(tid(page, "node-answer")).toContainText('"decision": "approve"');
 
   // The same is in the API.
   const d = (await srv.api("GET", "/api/runs/1")).body;
-  expect(d.node_runs[0].io).toEqual({ input_kind: "prompt", input: chief.calls()[0].prompt, answer: null, reply: "Done." });
+  // `appended_at` is where the orchestrator's instructions begin inside the prompt (a number, so not pinned here).
+  expect(d.node_runs[0].io).toMatchObject({ input_kind: "prompt", input: chief.calls()[0].prompt, answer: null, reply: "Done." });
+  expect(typeof d.node_runs[0].io.appended_at).toBe("number");
   expect(JSON.parse(d.node_runs[1].io.input)).toEqual({ n: 21 });
   expect(d.node_runs[2].io.input_kind).toBe("gate_question");
   expect(JSON.parse(d.node_runs[2].io.answer)).toMatchObject({ decision: "approve" });
@@ -1345,9 +1349,12 @@ test("E9.20-2 the run page shows the text a step wrote besides its result", asyn
   const plan = await id("plan"), quick = await id("quick");
 
   // The node says there is more than its result, and how much.
+  await showStep(page, "plan"); // `id()` left the view on the last step it named
   await expect(tid(page, `node-out-${plan}`)).toContainText('"task_count": 8');
   await expect(tid(page, `node-reply-note-${plan}`)).toContainText(`also wrote ${prose.length} characters of text besides its result`);
+  await showStep(page, "quick");
   await expect(tid(page, `node-reply-note-${quick}`)).toHaveCount(0);
+  await showStep(page, "plan");
   // The details show it in full, apart from the result that is passed on.
   await tid(page, `node-io-${plan}`).click();
   // Formatted by default (9.31), exactly as written in the raw view.
@@ -1406,7 +1413,8 @@ test("E9.21-1 a node row shows that it can be opened and whether it is open", as
 
   // The other step is untouched: its own row is closed, with no highlight, when its tab is selected.
   await expect(await rowOf("worker")).toHaveAttribute("aria-expanded", "false");
-  expect(await bg("worker")).toBe(closedBg);
+  // Polled: a row's colour fades back, so one read can catch it at an alpha nobody chose.
+  await expect.poll(() => bg("worker")).toBe(closedBg);
   await expect(tid(page, "node-details"), "and the open details did not follow it").toHaveCount(0);
 
   // Opening a row is per step: opening worker's leaves planner's closed, and only one set of details is on screen.
@@ -1415,14 +1423,19 @@ test("E9.21-1 a node row shows that it can be opened and whether it is open", as
   await expect(tid(page, "node-details")).toHaveCount(1);
   await expect(tid(page, "node-details-title")).toContainText("Details of worker");
   await expect(tid(page, "node-output")).toContainText('"ok": 2');
+  // Reading planner's row means selecting planner's tab, which is its own panel: its row is closed there, and worker's
+  // details did not follow the tab. (Selecting a tab closes the row it leaves, so this is also the reset a person sees.)
   await expect(await rowOf("planner")).toHaveAttribute("aria-expanded", "false");
+  await expect(tid(page, "node-details")).toHaveCount(0);
 
-  // "Hide details" closes it and removes the highlight.
+  // "Hide details" closes it and removes the highlight, from worker's own tab.
+  await (await rowOf("worker")).click();
+  await expect(tid(page, "node-details")).toHaveCount(1);
   await tid(page, "node-details-hide").click();
   await expect(tid(page, "node-details")).toHaveCount(0);
   await expect(await rowOf("worker")).toHaveAttribute("aria-expanded", "false");
   await page.mouse.move(5, 5);
-  expect(await bg("worker")).toBe(closedBg);
+  await expect.poll(() => bg("worker")).toBe(closedBg);
 });
 
 test("E9.22-1 the pages fill a wide column next to the sidebar", async ({ chief, boot, page }) => {
@@ -1668,60 +1681,34 @@ test("E9.27-1 the settings page uses the full width", async ({ boot, page }) => 
   }
 });
 
-test("E9.28-1 the sidebar collapses to icons and stays collapsed after a reload", async ({ boot, page }) => {
+test("E9.28-1 the sidebar is the icon rail, on every page and after a reload", async ({ boot, page }) => {
   const srv = await boot();
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto(srv.url + "/#/runs");
-  const width = async (id: string) => (await tid(page, id).boundingBox())!.width;
-  const mainX = async (key: string) => (await tid(page, `page-${key}`).boundingBox())!.x;
-  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "false");
-  const wide = await width("sidenav"), mainWide = await mainX("runs");
-  await expect(tid(page, "nav-collapse")).toHaveAttribute("aria-expanded", "true");
-  // An icon button, no words, in the top right corner of the sidebar, above the navigation.
-  const toggle = tid(page, "nav-collapse");
-  await expect(toggle).toHaveText("");
-  await expect(toggle).toHaveAttribute("aria-label", "Collapse the sidebar");
-  await expect(toggle.locator("svg")).toHaveCount(1);
-  const [tb, sb, rb] = [(await toggle.boundingBox())!, (await tid(page, "sidenav").boundingBox())!, (await tid(page, "nav-runs").boundingBox())!];
-  expect(tb.y + tb.height).toBeLessThanOrEqual(rb.y);
-  expect(tb.y - sb.y).toBeLessThan(24);
-  expect(sb.x + sb.width - (tb.x + tb.width)).toBeLessThan(20);
-  expect(tb.x).toBeGreaterThan(sb.x + sb.width / 2);
-
-  const saved = page.waitForResponse((r) => r.url().includes("/api/drafts") && r.request().method() !== "GET");
-  await tid(page, "nav-collapse").click();
-  await saved;
+  const width = async (id: string) => Math.round((await tid(page, id).boundingBox())!.width);
+  // One state, not a choice (15.70): the 72 px icon column, every name under its icon, and no control to widen it —
+  // a button for a state nobody wanted was removed on request ("remove this, let the left navbar not expandable").
   await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "true");
-  await expect.poll(() => width("sidenav")).toBe(64);
-  // Icons only: the names are tooltips, the gates badge keeps its count.
-  await expect(tid(page, "nav-runs")).toHaveAttribute("title", "Runs");
-  await expect(tid(page, "nav-designer")).toHaveAttribute("title", "Designer");
-  expect(await width("nav-runs")).toBeLessThan(48);
-  await expect(tid(page, "gates-badge")).toHaveAttribute("title", "0 gates waiting");
+  await expect(tid(page, "nav-collapse"), "there is no expand control").toHaveCount(0);
+  expect(await width("sidenav")).toBe(72);
+  await expect(tid(page, "nav-runs-caption"), "the name is drawn, not only announced").toBeVisible();
+  expect((await tid(page, "nav-runs-caption").boundingBox())!.height, "one line").toBeLessThan(16);
+  await expect(tid(page, "brand")).toHaveText("chief");
   await expect(tid(page, "gates-badge")).toHaveAttribute("data-count", "0");
-  await expect(tid(page, "nav-collapse")).toHaveAttribute("aria-expanded", "false");
-  await expect(tid(page, "nav-collapse")).toHaveAttribute("aria-label", "Expand the sidebar");
-  // Still at the top, above the navigation.
-  expect((await tid(page, "nav-collapse").boundingBox())!.y + 1).toBeLessThan((await tid(page, "nav-runs").boundingBox())!.y);
-  // The page widens into the space.
-  expect(await mainX("runs")).toBeLessThan(mainWide - 100);
 
-  // Kept across a reload and on every page.
-  await page.reload();
-  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "true");
+  // The same on every page, and the page keeps the rest of the window.
   for (const key of ["designer", "settings", "runs"]) {
     await tid(page, `nav-${key}`).click();
     await expect(tid(page, `page-${key}`)).toBeVisible();
     await expect(tid(page, `nav-${key}`)).toHaveAttribute("aria-current", "page");
-    expect(await width("sidenav")).toBe(64);
+    expect(await width("sidenav")).toBe(72);
+    expect(await width(`page-${key}`), `${key} fills the rest`).toBeGreaterThan(1200);
   }
 
-  await tid(page, "nav-collapse").click();
-  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "false");
-  await expect.poll(() => width("sidenav")).toBe(wide);
-  await expect(tid(page, "nav-runs")).not.toHaveAttribute("title", /./);
-  expect(await width("nav-runs")).toBeGreaterThan(120);
-  await expect(tid(page, "brand")).toHaveText("chief");
+  // Nothing about it is remembered to disagree later: a reload draws the same rail.
+  await page.reload();
+  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "true");
+  expect(await width("sidenav")).toBe(72);
 });
 
 test("E9.28-2 on a phone-sized window the sidebar becomes a menu and no page scrolls sideways", async ({ chief, boot, page }) => {
@@ -1953,6 +1940,7 @@ test("E9.31-1 recorded text on the run page is readable in full, with markdown f
   const plan = await id("plan"), gate = await id("ok");
 
   // The row's preview says that there is more.
+  await showStep(page, "plan"); // `id()` left the view on the gate
   await expect(tid(page, `node-out-${plan}`)).toHaveAttribute("data-clipped", "true");
   await expect(tid(page, `node-out-${plan}-more`)).toBeVisible();
   await tid(page, `node-io-${plan}`).click();
@@ -2028,8 +2016,9 @@ test("E9.31-1 recorded text on the run page is readable in full, with markdown f
   await expect(tid(page, "node-input-raw")).toHaveCount(0);
   await expect(tid(page, "node-input")).toHaveAttribute("data-lang", "json");
   await expect(tid(page, "node-input").locator('[data-json="key"]').first()).toHaveText('"message"');
-  // The row previews are coloured too.
+  // The row previews are coloured too (and the row is in the plan's own tab).
   await tid(page, "node-details-hide").click();
+  await showStep(page, "plan");
   await expect(tid(page, `node-out-${plan}`).locator('[data-json="key"]').first()).toHaveText('"status"');
 });
 
@@ -2216,11 +2205,12 @@ test("E9.38-1 the logo is the tab icon, sits next to the name in the sidebar, an
   await expect(logo).toBeVisible();
   expect(await logo.evaluate((n: HTMLImageElement) => n.complete && n.naturalWidth > 0)).toBe(true);
   await expect(tid(page, "brand")).toHaveText("chief");
+  // In the 72 px rail there is no room for the word beside the logo: it is clipped to a 1 px box for a screen
+  // reader, and the logo is the brand a person sees (15.70 removed the state that had the room).
   const [l, name] = [(await logo.boundingBox())!, (await tid(page, "brand").getByText("chief").boundingBox())!];
-  expect(l.x + l.width).toBeLessThanOrEqual(name.x);
-  await tid(page, "nav-collapse").click();
+  expect(name.width, "the word is not drawn in the rail").toBeLessThanOrEqual(1);
+  expect(l.x, "the logo sits inside the rail").toBeLessThanOrEqual(72);
   await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "true");
-  await expect(logo).toBeVisible();
 
   const readme = readFileSync(join(ROOT_DIR, "README.md"), "utf8");
   expect(readme.split("\n").slice(0, 6).join("\n")).toContain("packages/web/public/logo.svg");
@@ -2278,10 +2268,13 @@ test("E9.42-3 on the run page a failed step can be given another model, then the
   const big = await id("big"), plan = await id("plan");
 
   // The failed step says what happened and what can be done.
+  await showStep(page, "big"); // `id()` left the view on plan
   const help = tid(page, `node-failed-help-${big}`);
   await expect(help).toContainText("ran out of room in the model's context window");
   await expect(help).toContainText("only this step and the ones after it run again");
+  await showStep(page, "plan");
   await expect(tid(page, `node-failed-help-${plan}`)).toHaveCount(0);
+  await showStep(page, "big");
   await help.getByRole("button", { name: "Change its model" }).click();
 
   // Its details: the hint and a dropdown of the CLI's models, showing the step's current model.
@@ -2331,7 +2324,8 @@ edges: [a -> b, b -> c]
   await expect.poll(() => def("b")).toBe(bNew);
   await expect(tid(page, "step-edit-status")).toContainText("Saved for this run.");
 
-  // The step that has not started: listed, and changed the same way.
+  // The step that has not started: a tab of its own (15.93), listed there and changed the same way.
+  await tid(page, "node-tab-pending").click();
   await expect(tid(page, "not-started")).toContainText("c");
   await tid(page, "pending-step-c").getByRole("button").first().click();
   const cNew = `C-NEW ${fake({ output: { c: 2 } })}`;
@@ -2339,6 +2333,7 @@ edges: [a -> b, b -> c]
   // A refresh right after typing loses nothing.
   await expect.poll(() => page.evaluate(() => (window as any).__chiefDraftWrites)).toBe(0);
   await page.reload();
+  await tid(page, "node-tab-pending").click(); // a reload opens the tab that needs attention, not this one
   await tid(page, "pending-step-c").getByRole("button").first().click();
   await expect(tid(page, "pending-step-c").getByTestId("step-prompt")).toHaveValue(cNew);
   await expect.poll(() => def("c")).toBe(cNew);
@@ -2842,11 +2837,11 @@ test("E9.59-1 on a laptop-sized window the designer gives the canvas the room: i
   const srv = await boot({ compact: true });
   const width = async (id: string) => Math.round((await tid(page, id).boundingBox())!.width);
 
-  // A large window: everything open, as before.
+  // A large window: the blocks column and the panel are open (the rail is icons at every size, 15.70).
   await page.setViewportSize({ width: 1920, height: 900 });
   await page.goto(srv.url + "/#/designer/roomy");
   await expect(tid(page, "flow-node-plan")).toBeVisible();
-  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "false");
+  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "true");
   await expect(tid(page, "palette")).toHaveAttribute("data-full", "true");
   await expect(tid(page, "wf-name")).toBeVisible();
   const wideCanvas = await width("canvas");
@@ -2888,9 +2883,9 @@ test("E9.59-1 on a laptop-sized window the designer gives the canvas the room: i
   await page.locator(".react-flow__pane").click({ position: { x: 30, y: 30 } });
   await expect(tid(page, "validation-errors")).toBeVisible();
   await expect(tid(page, "designer-status")).toContainText("Not runnable yet");
-  // The other pages keep the sidebar as the user left it.
+  // The other pages draw the same rail (one state, 15.70).
   await tid(page, "nav-runs").click();
-  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "false");
+  await expect(tid(page, "sidenav")).toHaveAttribute("data-collapsed", "true");
 });
 
 test("E9.60-1 a run opens in a panel over the run list, with its own address, keys and a full page", async ({ chief, boot, page }) => {
@@ -3616,8 +3611,8 @@ test("E15.55-1 Settings › MCP servers lists them read-only and shows each CLI'
   expect(join.gap, "the section is separated from the grid above it").toBeGreaterThanOrEqual(16);
   expect(join.marginTop).not.toBe("0px");
 
-  // It says, before anything else, that this is a reading and not an adding surface.
-  await expect(section).toContainText("chief reads these; it does not add or remove them");
+  // It says, before anything else, what it is: a reading, whose one way to add a server is that CLI's own command.
+  await expect(section).toContainText("chief reads these; adding one runs the CLI's own command");
   // And it is honest about the folder: the same CLI has different servers in different folders.
   await expect(tid(page, "settings-mcp-folder")).not.toHaveCount(0);
 
@@ -3627,11 +3622,10 @@ test("E15.55-1 Settings › MCP servers lists them read-only and shows each CLI'
     await expect(tid(page, `settings-mcp-agent-${agent}`), agent).toBeVisible();
   }
 
-  // Read-only is a property, not a label: the only buttons in the section are Refresh and Copy. A form
-  // that could add a server would have to be a text field plus a submit.
-  const buttons = await section.locator("button:visible").evaluateAll((els) => els.map((e) => (e.textContent ?? "").trim()));
-  expect(buttons.filter((t) => !["Refresh MCP servers", "Copy", "Copied"].includes(t)), "no add, edit or remove action").toEqual([]);
-  await expect(section.locator("input:visible, textarea:visible")).toHaveCount(0);
+  // A server row is a reading: no field of its own on any row. The only editable thing in the section is the CLI's
+  // own command box, one per card (15.56) — not a form that rebuilds the command the guide already prints.
+  await expect(page.locator('[data-testid^="settings-mcp-server-"] input, [data-testid^="settings-mcp-server-"] textarea'), "a row has no field").toHaveCount(0);
+  await expect(tid(page, "settings-mcp-command-claude-code")).toBeVisible();
 
   // The guide is the CLI's own syntax, per CLI, and it distinguishes "a command" from "a file":
   await tid(page, "settings-mcp-how-summary-claude-code").click();
@@ -3701,22 +3695,32 @@ test("E15.56-1 an MCP command is run from a box you can edit, and its output is 
   expect((await refused(`${fake} mcp list | rm -rf /`)).error).toMatch(/no meaning here/);
 });
 
-test("E15.57-1 sign-in is offered only where a server is not connected, sign-out where it is, and the CLI's own name is used", async ({ boot, page }) => {
-  const srv = await boot();
+test("E15.57-1 sign-in is offered only where a server is not connected, sign-out where it is, and the CLI's own name is used", async ({ chief, boot, page }) => {
+  // The server's state decides which control a row offers, so the two states come from a list this case owns. Taking
+  // `.first()` of the real list made it about whichever row sorted first, and that row is an account connector with no
+  // control at all. `.mcp.json` gives each a definition, which is what makes it a server of the CLI's own config.
+  // `.mcp.json` is what makes a listed server one of the CLI's own configuration rather than an account connector. It is
+  // written where discovery reads it — the workspace — as well as in the run folder, since the page discovers from both.
+  const defs = JSON.stringify({ mcpServers: { alpha: { command: "npx", args: ["alpha"] }, beta: { command: "npx", args: ["beta"] } } });
+  chief.file(".mcp.json", defs);
+  const workspace = join(dirname(chief.home), "workspace");
+  mkdirSync(workspace, { recursive: true });
+  writeFileSync(join(workspace, ".mcp.json"), defs);
+  const list = chief.file("mcp-list.txt", [
+    "alpha: npx -y alpha - ✔ Connected",
+    "beta: npx -y beta - ! Needs authentication",
+  ].join("\n"));
+  const srv = await boot({ env: { FAKE_CLAUDE_MCP_LIST: list } });
   await page.goto(srv.url + "/#/settings");
-  const row = page.locator('[data-testid^="settings-mcp-server-claude-code-"]').first();
-  await expect(row).toBeVisible();
-  const status = await row.getAttribute("data-status");
-  const name = (await row.getAttribute("data-testid"))!.replace("settings-mcp-server-claude-code-", "");
 
   // One control, chosen by state — never both (reported 2026-11-21: "sign in should only be available for
   // the MCP that still not authenticated, for the already connected ones, it should be logout").
-  const signIn = tid(page, `mcp-auth-start-claude-code-${name}`);
-  await expect(signIn).toHaveCount(status === "connected" || status === "disabled" ? 0 : 1);
-  if (status === "connected") {
-    await tid(page, `mcp-auth-start-claude-code-${name}`).click();
-    expect((await page.evaluate(() => 0)), "a connected server offers Log out").toBe(0);
-  }
+  await expect(tid(page, "settings-mcp-server-claude-code-alpha")).toHaveAttribute("data-status", "connected");
+  await expect(tid(page, "mcp-auth-start-claude-code-alpha")).toHaveText("Sign out");
+  await expect(tid(page, "settings-mcp-server-claude-code-beta")).toHaveAttribute("data-status", "needs-auth");
+  const signIn = tid(page, "mcp-auth-start-claude-code-beta");
+  await expect(signIn).toHaveText("Authenticate");
+  const name = "beta";
 
   // The flows are faked at the API so no real account is touched.
   const posted: any[] = [];
@@ -3765,17 +3769,20 @@ test("E15.60-1 a connector row shows its status and nothing else: no control, an
   // "needs sign-in" — 693 of that machine's 694 rows are account connectors, and the remark was written for the one
   // row it belonged to. A connector is a separate MCP connection, authenticated with its own service, and the CLI
   // has no command for it, so chief must not pretend to have one.
-  const seed = spawnSync(process.execPath, ["-e", `
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(${JSON.stringify(join(chief.home, "chief.db"))});
-    const now = new Date().toISOString();
-    const put = db.prepare("INSERT INTO agent__mcp_servers (adapter, folder, name, source, config_json, updated_at) VALUES (?,?,?,?,?,?)");
-    put.run("claude-code", ${JSON.stringify(chief.dir)}, "google-docs", "discovered", JSON.stringify({ cli_name: "claude.ai Google Docs", status: "needs-auth", scope: "connector" }), now);
-    put.run("claude-code", ${JSON.stringify(chief.dir)}, "atlassian", "discovered", JSON.stringify({ cli_name: "claude.ai Atlassian", status: "connected", scope: "connector" }), now);
-    put.run("claude-code", ${JSON.stringify(chief.dir)}, "github", "discovered", JSON.stringify({ cli_name: "github", status: "failed", scope: "config" }), now);
-  `], { encoding: "utf8" });
-  expect(seed.status, seed.stderr).toBe(0);
-  const srv = await boot();
+  //
+  // The list is the case's own, so the connector states are known and nothing has to be written behind discovery.
+  // `github` is the CLI's own server, so it needs a definition to be scoped as configuration rather than as a connector.
+  const defs = JSON.stringify({ mcpServers: { github: { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] } } });
+  chief.file(".mcp.json", defs);
+  const workspace = join(dirname(chief.home), "workspace");
+  mkdirSync(workspace, { recursive: true });
+  writeFileSync(join(workspace, ".mcp.json"), defs);
+  const list = chief.file("mcp-list.txt", [
+    "claude.ai Google Docs: https://drivemcp.googleapis.com/mcp/v1 - ! Needs authentication",
+    "claude.ai Atlassian: https://mcp.atlassian.com/v1/mcp - ✔ Connected",
+    "github: npx -y @modelcontextprotocol/server-github - ✘ Failed to connect",
+  ].join("\n"));
+  const srv = await boot({ env: { FAKE_CLAUDE_MCP_LIST: list } });
   try {
     await page.goto(srv.url + "/#/settings");
     await expect(tid(page, "settings-mcp-agent-claude-code")).toBeVisible();
@@ -3796,7 +3803,7 @@ test("E15.60-1 a connector row shows its status and nothing else: no control, an
     // Said once, on the card, rather than 54 times on the rows — and it is not a dead end: the one place a
     // person can act on these is the account's own connector page, so the card links there. Reported 2026-11-21:
     // "there's no sign in/sign out action i can perform" — true of the rows, and no help without this.
-    await expect(tid(page, "settings-mcp-connectors-claude-code")).toContainText("come from your Claude Code account");
+    await expect(tid(page, "settings-mcp-connectors-claude-code")).toContainText("are MCP connections your Claude Code account provides");
     await expect(tid(page, "settings-mcp-connectors-claude-code")).toContainText("authenticated separately");
     await expect(tid(page, "settings-mcp-connectors-claude-code")).toContainText("cannot do that for one of them");
     const link = tid(page, "settings-mcp-connectors-link-claude-code");
@@ -3805,7 +3812,7 @@ test("E15.60-1 a connector row shows its status and nothing else: no control, an
     await expect(link).toContainText("claude.ai");
 
     // The CLI's own server is the one that gets a control.
-    await expect(page.locator('[data-testid="settings-mcp-server-claude-code-github"] button').first()).toHaveText(/Sign in/);
+    await expect(page.locator('[data-testid="settings-mcp-server-claude-code-github"] button').first()).toHaveText(/Authenticate/);
   } finally { await srv.stop(); }
 });
 

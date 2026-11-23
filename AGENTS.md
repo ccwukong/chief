@@ -181,9 +181,11 @@ Work proceeds phase by phase, in the order of `docs/dev-plan.md` §7.
 - **A button whose action waits on the server shows a spinner.** Use `AsyncButton` from
   `packages/web/src/ui.tsx`: the label is replaced by a spinner until the action is done and the
   button cannot be clicked twice.
-- **The layout is responsive.** The app shell is a sidebar that becomes a menu below 768 px, and it
-  is **collapsed to icons by default**: the working area gets the room, and a person who expands it
-  keeps it expanded. No page may scroll sideways at 375 px wide; wide tables scroll inside their own box.
+- **The layout is responsive.** The app shell is a rail that becomes a menu below 768 px, and the
+  rail has **one state**: a 72 px icon column with every destination's name under its icon, and no
+  expand control — the working area gets the room (15.70, asked 2026-11-22: "remove this, let the left
+  navbar not expandable"). No page may scroll sideways at 375 px wide; wide tables scroll inside their
+  own box, and a hint or a path that is too long wraps instead of widening the page.
 - **chief bot is a place in the shell, not an overlay.** It is a rail item beside the destinations
   that opens a **panel of its own column** next to the page (full width below 768 px), with the page
   keeping its layout beside it. Do not put it back in a floating bubble: the bubble covered page

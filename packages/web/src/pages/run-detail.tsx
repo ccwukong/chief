@@ -316,17 +316,19 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
         {/* The whole row opens the node's details. The arrow and the highlight show that, and whether it is open. */}
         <Button variant="ghost" data-testid={`node-run-${n.id}`} data-node-id={n.node_id} data-status={n.status} data-phase={n.phase} data-item={n.item_index ?? ""} aria-expanded={open === n.id} data-open={open === n.id} title={open === n.id ? "Hide the details" : "Show the full input and output"} className={`flex w-full items-center gap-3 border-l-4 border-t border-t-slate-100 px-3 py-2 text-left text-sm ${open === n.id ? "border-l-primary bg-accent" : "border-l-transparent hover:bg-slate-50"}`} style={{ paddingLeft: 8 + depth * 24 }} onClick={() => setOpen(open === n.id ? null : n.id)}>
           <span data-testid={`node-arrow-${n.id}`} aria-hidden="true" className={`w-3 shrink-0 text-xs ${open === n.id ? "text-primary" : "text-slate-400"}`}>{open === n.id ? "▾" : "▸"}</span>
-          <span className="w-64 truncate font-medium">
+          {/* The row is five columns wide; on a phone it kept the window at 432 px, so the name gives way first and the
+              three secondary ones go (the arrow, the status and the row itself still say everything a thumb needs). */}
+          <span className="w-24 shrink-0 truncate font-medium sm:w-40 md:w-64">
             {n.node_id}{n.item_index != null ? `[${n.item_index}]` : ""}
             {n.phase === "compensate" && <span className="ml-2 rounded bg-orange-100 px-1.5 text-xs text-orange-800">compensate</span>}
             {n.attempt > 1 && <span className="ml-2 text-xs text-slate-500">try {n.attempt}</span>}
           </span>
-          <span className="w-14 text-xs text-slate-500">{n.node_type}</span>
+          <span className="hidden w-14 shrink-0 text-xs text-slate-500 sm:block">{n.node_type}</span>
           <Status value={n.status} />
-          <span className="mono ml-auto text-xs text-slate-600" data-testid={`node-usage-${n.id}`}>
+          <span className="mono ml-auto min-w-0 truncate text-xs text-slate-600" data-testid={`node-usage-${n.id}`}>
             {[u ? `${u.input_tokens + u.cache_read_tokens + u.cache_write_tokens} in · ${u.output_tokens} out${SHOW_COST ? ` · ${usd(u.cost_usd)}` : ""}` : "", n.input?.est_tokens ? `prompt ~${n.input.est_tokens} tok` : ""].filter(Boolean).join(" · ")}
           </span>
-          <span className="w-16 shrink-0 text-right text-xs text-primary">{open === n.id ? "Hide" : "Details"}</span>
+          <span className="hidden w-16 shrink-0 text-right text-xs text-primary sm:block">{open === n.id ? "Hide" : "Details"}</span>
         </Button>
         {/* What went in and what came out, on the node itself. Click the node for the full text. */}
         {open !== n.id && (n.io?.input != null || n.output != null || n.error) && (

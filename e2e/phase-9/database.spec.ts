@@ -10,6 +10,10 @@ const sqlite = (db: string, sql: string) => {
   return r.stdout.trim();
 };
 
+/** The newest migration on disk: a count typed here broke four cases the moment 010 was added. */
+const MIGRATIONS = readdirSync(join(ROOT_DIR, "packages/chief/src/store/migrations")).filter((f) => f.endsWith(".sql")).sort();
+const LATEST = MIGRATIONS.at(-1)!.replace(/\.sql$/, "");
+
 test("E9.6-1 one SQLite file holds everything, and every table belongs to a feature schema", ({ chief }) => {
   // Use most of the product once: workflow, run with a gate, script approval, schedule, MCP list, settings.
   chief.file("s.sh", "cat > /dev/null\necho '{}'\n");
@@ -35,7 +39,7 @@ edges: [a -> s, s -> g]
   const db = join(chief.home, "chief.db");
   const tables = sqlite(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split("\n");
   expect(tables).toEqual([
-    "agent__mcp_reads", "agent__mcp_servers", "assistant__messages", "draft__entries",
+    "agent__mcp_reads", "agent__mcp_servers", "assistant__messages", "assistant__threads", "draft__entries",
     "run__events", "run__gates", "run__messages", "run__node_runs", "run__runs", "run__side_effects",
     "system__migrations", "system__settings",
     "workflow__definitions", "workflow__schedules", "workflow__script_approvals",
@@ -50,7 +54,7 @@ edges: [a -> s, s -> g]
   expect(doc.db.schemas.run.map((t: any) => t.table)).toEqual(["events", "gates", "messages", "node_runs", "runs", "side_effects"]);
   expect(doc.db.schemas.workflow).toEqual([{ table: "definitions", rows: 1 }, { table: "schedules", rows: 1 }, { table: "script_approvals", rows: 1 }]);
   expect(doc.db.schemas.run.find((t: any) => t.table === "runs").rows).toBe(1);
-  expect(chief.run(["doctor"]).stdout).toMatch(/schemas\s+agent \(2\), assistant \(1\), draft \(1\), run \(6\), system \(2\), workflow \(3\)/);
+  expect(chief.run(["doctor"]).stdout).toMatch(/schemas\s+agent \(2\), assistant \(2\), draft \(1\), run \(6\), system \(2\), workflow \(3\)/);
 
   // The store is the only code that imports SQLite, and it names every table with its schema. The rule is
   // about importing, not about the words in a comment: `node-warnings.ts` mentions the module to filter
@@ -88,7 +92,7 @@ test("E9.6-4 a database from before the schemas is migrated in place with its da
 
   const doc = chief.run(["doctor", "--json"]);
   expect(doc.code, doc.stdout + doc.stderr).toBe(0);
-  expect(doc.json().db).toMatchObject({ migrations: 5, latest: "005-assistant" });
+  expect(doc.json().db).toMatchObject({ migrations: MIGRATIONS.length, latest: LATEST });
   expect(sqlite(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%\\_\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite_%'")).toBe("");
 
   // The data is where it was, under the new names, and still usable.

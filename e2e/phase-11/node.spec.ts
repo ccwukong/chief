@@ -35,7 +35,9 @@ test("E11.1-1 a database from an earlier release opens, reads and writes the sam
 
   const doc = chief.run(["doctor", "--json"]);
   expect(doc.code, doc.stdout + doc.stderr).toBe(0);
-  expect(doc.json().db).toMatchObject({ ok: true, migrations: 5, latest: "005-assistant" });
+  const latest = readdirSync(join(ROOT_DIR, "packages/chief/src/store/migrations")).filter((f) => f.endsWith(".sql")).sort().at(-1)!.replace(/\.sql$/, "");
+  const count = readdirSync(join(ROOT_DIR, "packages/chief/src/store/migrations")).filter((f) => f.endsWith(".sql")).length;
+  expect(doc.json().db).toMatchObject({ ok: true, migrations: count, latest });
   // The rows are where they were, and still read back.
   expect(chief.run(["workflow", "list", "--json"]).json()).toMatchObject([{ name: "old", version: 4 }]);
   expect(chief.run(["runs", "list", "--json"]).json()).toMatchObject([{ id: 1, status: "completed" }]);

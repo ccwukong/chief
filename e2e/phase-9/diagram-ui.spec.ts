@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, fake, test as base, type Server, roomyLayout } from "../helpers";
+import { showStep, expect, fake, test as base, type Server, roomyLayout } from "../helpers";
 
 const test = base.extend<{ boot: (opts?: { env?: Record<string, string>; compact?: boolean }) => Promise<Server> }>({
   boot: async ({ chief }, use) => {
@@ -53,7 +53,9 @@ edges: [plan -> slow, slow -> check, check -> each]
   await tid(page, "diagram-node-each").click();
   await expect(tid(page, "pending-step-each").locator("button").first()).toHaveAttribute("aria-expanded", "true");
 
-  // After the answer the map reports its items and every step ends green.
+  // After the answer the map reports its items and every step ends green. The card is inside the gate's own tab, and
+  // opening the not-started entry above left the view there.
+  await showStep(page, "check");
   await tid(page, "gate-approve").click();
   await expect(tid(page, "run-status")).toHaveText("completed");
   await expect(tid(page, "diagram-progress-each")).toContainText("2 of 2 items done");
@@ -188,7 +190,8 @@ edges: [first -> second]
   await expect(fit).toHaveAttribute("aria-label", "Fit the whole workflow in the diagram");
   await fit.click();
   await expect.poll(shown).toBe(true);
-  expect(await transform(), "the fit control returns to the opened view").not.toBe(panned);
+  // Polled: the view is animated into place, so a single read can catch the frame before it moves.
+  await expect.poll(transform, { message: "the fit control moves the view back" }).not.toBe(panned);
 
   // Zooming: the library's zoom-in control changes the scale, and double-click on the background does too.
   const scale = async () => Number(/matrix\(([^)]+)\)/.exec(await transform())![1].split(",")[0]);

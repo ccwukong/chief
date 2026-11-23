@@ -30,6 +30,19 @@ export const HELP: Record<string, { text: string; use?: string; example?: string
       "ask: one field per question",
     ].join("\n"), example: 'An input gate "gate" with the options approve, comment:\n\nIf {{nodes.gate.output.option}} is "approve", approve the pull request. Otherwise post the comments.' },
 
+  // The four kinds share one "?" on the column's heading (15.41); it had been lost from this map, so the button the
+  // designer still drew showed nothing at all (found by E9.50-1, 2026-11-23).
+  blocks: {
+    text: [
+      "Drag one onto the canvas.",
+      "Agent — runs a prompt on the agent CLI and returns JSON.",
+      "Script — runs a program you wrote, always sandboxed.",
+      "Gate — stops and asks you a question, and waits.",
+      "Map — runs one step once for each item of a list.",
+    ].join("\n"),
+    example: "filter-owned.py, as a script that keeps the issues you own;\na gate between \"collect\" and \"publish\" to approve the list",
+  },
+
   // ── any node ─────────────────────────────────────────────────────────────
 
   // ── agent node ───────────────────────────────────────────────────────────

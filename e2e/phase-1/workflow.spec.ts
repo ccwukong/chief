@@ -214,7 +214,8 @@ test("E1.10-3 workflow list, validate by name, and rm", ({ chief }) => {
   chief.run(["run", "simple"]);
   const rm = chief.run(["workflow", "rm", "simple"]);
   expect(rm.code).toBe(1);
-  expect(rm.stderr).toContain("has runs and cannot be removed");
+  expect(rm.stderr).toContain("has runs, and a run is kept in full: archive it instead");
+  expect(rm.stderr).toContain("chief workflow archive simple");
   expect(chief.run(["workflow", "rm", "other"]).code).toBe(0);
   expect(chief.run(["workflow", "list", "--json"]).json().map((w: any) => w.name)).toEqual(["simple"]);
   expect(chief.run(["run", "other"]).stderr).toContain('workflow "other" not found');

@@ -29,11 +29,13 @@ nodes:
   // Runs page: the inputs are typed into the JSON editor.
   await page.goto(srv.url + "/#/runs");
   await tid(page, "new-run-workflow").selectOption("review");
-  // Only the editor: no list of inputs with stored values, no template button. Its hint, while empty, is the shape with blanks.
+  // Only the editor: no list of inputs with stored values, no template button. And the shape is in the box as real JSON
+  // (15.116), the workflow's own default filled in and the input it leaves open a blank to type.
   await expect(tid(page, "new-run-inputs-refs")).toHaveCount(0);
   await expect(tid(page, "new-run-inputs-template")).toHaveCount(0);
-  await expect(tid(page, "new-run-inputs-editor")).not.toContainText("my-org/app");
-  await expect(tid(page, "new-run-inputs")).toHaveAttribute("placeholder", /"prlink": ""/);
+  await expect(tid(page, "new-run-inputs-editor")).toContainText("my-org/app");
+  await expect(tid(page, "new-run-inputs")).toHaveValue(/"prlink": ""/);
+  await expect(tid(page, "new-run-inputs-shape"), "a box emptied by hand gets the shape back").toBeVisible();
   // A blank that is not filled in is refused.
   await tid(page, "new-run-inputs").fill('{"params": {"prlink": ""}}');
   await tid(page, "new-run-start").click();
@@ -80,13 +82,14 @@ test("E9.67-1 every JSON block is coloured the same way, whether it can be edite
   const id = (await srv.api("POST", "/api/runs", { workflow: "demo" })).body.run.id as number;
   await expect.poll(async () => (await srv.api("GET", `/api/runs/${id}`)).body.run?.status).toBe("completed");
 
-  // Read-only: the inputs the run ran with have the editor's frame, line numbers and colours, and are exactly the JSON as text.
+  // Read-only: the inputs the run ran with have the editor's frame and colours, are exactly the JSON as text, and carry no
+  // line numbers — a numbered margin invites a click that does nothing (asked 2026-11-22).
   await page.goto(`${srv.url}/#/runs/${id}/full`);
   await page.getByText("Inputs this run ran with").click();
   const block = tid(page, "run-inputs-json");
   await expect(block).toHaveText('{\n  "a": {\n    "who": "everyone",\n    "n": 3,\n    "ok": true\n  }\n}');
   for (const kind of ["key", "string", "number", "word"]) await expect(block.locator(`[data-json="${kind}"]`).first()).toBeVisible();
-  await expect(page.locator("[data-json-code]").first()).toContainText("1");
+  await expect(page.locator("[data-json-code]").first()).not.toContainText(/^\s*1\s*$/m);
   const colour = (loc: ReturnType<Page["locator"]>) => loc.first().evaluate((el) => getComputedStyle(el).color);
   const readOnly = { key: await colour(block.locator('[data-json="key"]')), number: await colour(block.locator('[data-json="number"]')) };
 

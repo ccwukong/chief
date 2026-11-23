@@ -76,7 +76,8 @@ test("E10.2-1 one sidecar per app, on a port from its own stdout, over SSE", asy
   await d.page.evaluate(() => { (window as any).__notReloaded = true; });
   await d.page.getByTestId("new-run-start").click();
   await expect(d.page.getByTestId("run-title")).toContainText("Run #1 · one");
-  await expect(d.page.locator('[data-node-id="a"]')).toHaveAttribute("data-status", "running");
+  // The row's test id is by node-run id; `data-node-id` is the workflow's own step id (the tab carries it too).
+  await expect(d.page.locator('[data-testid^="node-run-"][data-node-id="a"]'), "the step's row follows the run without a reload").toHaveAttribute("data-status", "running");
   await expect(d.page.getByTestId("run-status")).toHaveText("completed");
   expect(await d.page.evaluate(() => (window as any).__notReloaded)).toBe(true);
   expect(sidecarsOf(pid).map(([p]) => p)).toEqual(sidecars.map(([p]) => p));

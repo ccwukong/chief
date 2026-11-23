@@ -1,5 +1,5 @@
 import { execSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inflateSync } from "node:zlib";
 import { parse } from "yaml";
@@ -743,11 +743,15 @@ test("E15.68-1 shadcn's token names resolve onto chief's own palette, and the br
     const value = line![1].trim();
     if (value.startsWith("var(--")) expect(css, `--${token} -> ${value} resolves`).toContain(`--${value.slice(6, -1)}:`);
   }
-  // shadcn's `accent` is a hover surface; chief's brand blue is `brand`. The two meanings cannot share a name.
-  expect(css).toContain("--brand: #2563eb");
-  expect(/--accent:\s*var\(--brand\)/.test(root), "accent is not the brand colour").toBe(false);
-  // And nothing still reaches for the old utility.
-  expect(readFileSync(join(ROOT_DIR, "packages/web/src/app.tsx"), "utf8")).not.toMatch(/bg-accent\b|text-accent\b/);
+  // shadcn's `accent` is a hover surface, and chief has no brand colour of its own any more: the neutral primary
+  // (15.83) removed `--brand`, so a token by that name coming back would mean the palette drifted again.
+  expect(css).not.toContain("--brand:");
+  expect(/--accent:\s*var\(--color-slate-100\)/.test(root), "accent is a quiet surface").toBe(true);
+  // A selected rail item is shadcn's accent surface (`bg-accent`) with primary text — the meaning the token has now —
+  // and no class asks for a brand colour, which no longer exists.
+  const app = readFileSync(join(ROOT_DIR, "packages/web/src/app.tsx"), "utf8");
+  expect(app).toMatch(/bg-accent\b/);
+  expect(app).not.toMatch(/\b(bg|text|border)-brand\b/);
   // `cn()` exists where shadcn expects it.
   expect(readFileSync(join(ROOT_DIR, "packages/web/src/lib/utils.ts"), "utf8")).toContain("twMerge");
 });

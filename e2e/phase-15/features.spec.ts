@@ -33,7 +33,7 @@ test("E15.24-1 the cost figures and budgets are hidden behind two flags, and the
 
   // The run list no longer has a Cost column, the run page has no dollars in its totals, and Settings has
   // no budget fields — the three places that showed one before this task.
-  expect(read("packages/web/src/pages/runs.tsx")).toContain("{SHOW_COST && <th");
+  expect(read("packages/web/src/pages/runs.tsx")).toMatch(/\{SHOW_COST && <TableHead[^>]*>Cost<\/TableHead>\}/);
   expect(read("packages/web/src/pages/run-detail.tsx")).toContain("{SHOW_COST ? ` · ${usd(run.cost_usd)}` : \"\"}");
   expect(read("packages/web/src/pages/settings.tsx")).toContain("{SHOW_BUDGETS && (");
   expect(read("packages/web/src/pages/designer.tsx")).toContain("{SHOW_BUDGETS && <>");

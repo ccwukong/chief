@@ -122,7 +122,9 @@ export function Field({ label, children, hint, help }: { label: string; children
       {children}
       {/* The explanation under a field is body text, not a footnote: at 12 px it was the smallest thing on the page a
           person has to actually read (asked 2026-11-22). */}
-      {hint && <span className="mt-1 block text-sm text-slate-500">{hint}</span>}
+      {/* A hint may carry a path (a default workspace, the home folder): a long one must wrap, not widen the page
+          (found at 375 px in E9.28-2, 2026-11-23). */}
+      {hint && <span className="mt-1 block text-sm text-slate-500 [overflow-wrap:anywhere]">{hint}</span>}
     </label>
   );
 }

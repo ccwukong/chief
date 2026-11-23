@@ -162,6 +162,9 @@
   --color-slate-800: oklch(26.9% 0 none);
   --color-slate-900: oklch(20.5% 0 none);
   --color-slate-950: oklch(14.5% 0 none);
+  /* The one red step shadcn's tokens reach for (`--destructive`), declared here rather than left to Tailwind's default:
+   * it is part of chief's palette, and a token defined in one place can be checked in one place (E15.68-1). */
+  --color-red-600: #dc2626;
 }
 
 [data-theme="light"][data-base="gray"] {
@@ -394,10 +397,10 @@ html, body, #root { height: 100%; }
  *
  * `font-display: swap`, so the first paint is in the system's font and the text never waits for a file.
  */
-@font-face { font-family: "Geist"; src: url("/fonts/Geist-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/Geist-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/Geist-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
-@font-face { font-family: "Geist Mono"; src: url("/fonts/GeistMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-semibold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/fonts/geist-mono-regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
 
 /*
  * The family is a token so a component can ask for it by name (`font-sans`, `font-mono`), which is how shadcn's own

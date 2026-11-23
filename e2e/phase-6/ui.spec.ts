@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, fake, test as base, type Server, roomyLayout } from "../helpers";
+import { showStep, expect, fake, test as base, type Server, roomyLayout } from "../helpers";
 
 /** `chief` plus a real `chief serve` that is stopped after the test. */
 const test = base.extend<{ boot: (opts?: { env?: Record<string, string>; compact?: boolean }) => Promise<Server> }>({
@@ -123,9 +123,9 @@ test("E6.3-1 the runs page lists runs with status and opens one", async ({ chief
   await expect(tid(page, "run-row-2")).toContainText("gated");
   await expect(tid(page, "run-row-2")).toContainText("waiting gate");
   // The dollar figure is hidden while its usefulness is decided (task 15.24): no Cost column, and no
-  // money in a row. The Tokens column (task 15.33) is new, so the table has six columns with cost
-  // hidden; what the list is for is still the status, and the tokens are labelled by their header.
-  await expect(page.getByTestId("runs-table").locator("thead th")).toHaveCount(6);
+  // money in a row. The Tokens column (15.33) and the tick column (15.90) are newer, so with cost hidden
+  // the table has seven columns; what the list is for is still the status, and the tokens are labelled.
+  await expect(page.getByTestId("runs-table").locator("thead th")).toHaveCount(7);
   await expect(page.getByTestId("runs-table").locator("thead")).toContainText("Tokens");
   await expect(page.getByTestId("runs-table")).not.toContainText("Cost");
   await expect(page.getByTestId("runs-table")).not.toContainText("$");
@@ -199,6 +199,7 @@ edges: [writer -> slow]
   const srv = await boot();
   const id = await startRun(srv, "ctl");
   await page.goto(`${srv.url}/#/runs/${id}`);
+  await showStep(page, "slow"); // the row lives in its own tab (15.93)
   const slow = page.locator('[data-node-id="slow"][data-phase="forward"]');
   await expect(slow).toHaveAttribute("data-status", "running");
   // While it runs there is nothing to resume, so Resume is not drawn at all — not a greyed-out button (task 15.90).
@@ -208,6 +209,7 @@ edges: [writer -> slow]
 
   await tid(page, "btn-pause").click();
   await expect(tid(page, "run-status")).toHaveText("paused");
+  await showStep(page, "slow"); // pausing re-picks the tab that needs attention, and this is a tab of its own
   await expect(slow).toHaveAttribute("data-status", "interrupted");
   // And once it is paused there is nothing to pause: the row offers Resume and Cancel.
   await expect(tid(page, "btn-pause")).toHaveCount(0);
@@ -242,7 +244,7 @@ edges: [writer -> slow]
   // Cancel a second, running run.
   const id2 = await startRun(srv, "ctl");
   await page.goto(`${srv.url}/#/runs/${id2}`);
-  await expect(page.locator('[data-node-id="slow"]')).toHaveAttribute("data-status", "running");
+  await expect(page.locator('[data-node-id="slow"][data-phase="forward"]'), "the row, not its tab").toHaveAttribute("data-status", "running");
   await tid(page, "btn-cancel").click();
   await expect(tid(page, "run-status")).toHaveText("cancelled");
   expect((await detail(srv, id2)).run.status).toBe("cancelled");
@@ -635,7 +637,7 @@ test("E6.5-7 the script panel shows the sandbox, cannot turn it off, and asks be
   const sandbox = tid(page, "node-sandbox");
   await expect(sandbox).toContainText("Scripts always run sandboxed");
   // The only sandbox controls widen it: network, extra write paths, env names. Nothing disables it.
-  await expect(sandbox.locator("input[type=checkbox]")).toHaveCount(1);
+  await expect(sandbox.locator('[role="checkbox"]')).toHaveCount(1);
   await expect(tid(page, "node-sandbox-network")).not.toBeChecked();
   expect(await sandbox.locator("input, textarea, select, button:not([data-testid^='help-'])").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")))).toEqual(["node-sandbox-network", "node-sandbox-write", "node-sandbox-env"]);
   expect((await tid(page, "node-panel").innerText()).toLowerCase()).not.toMatch(/disable the sandbox|turn off|sandbox: off|unsandboxed|without sandbox/);
