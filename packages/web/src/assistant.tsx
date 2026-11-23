@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, get, usd } from "./api";
 import { SHOW_COST } from "./features";
-import { AsyncButton, ErrorBox, Modal, Spinner, TrashButton, useDraft } from "./ui";
+import { AsyncButton, ErrorBox, go, Modal, Spinner, TrashButton, useDraft } from "./ui";
 import { FormattedMarkdown } from "./text-view";
 
 /** One tool call the agent made: what it ran, on what, and what came back. */
@@ -11,12 +11,17 @@ import { Button } from "./components/ui/button";
 import { Textarea } from "./components/ui/textarea";
 
 interface Change { workflow: string; before: any; after: any; summary: string[] }
+/**
+ * A workflow the bot built while the panel was **not** in the designer: checked by chief, offered here, created by one
+ * click. `definition` is the full workflow, ready for `PUT /api/workflows/:name`.
+ */
+interface Proposal { name: string; definition: any; steps: number }
 /** A schedule the assistant wrote, as the answer recorded it (task 15.33). */
 interface Schedule { action: "create" | "update" | "delete"; workflow: string; id: number | null; cron?: string; inputs?: Record<string, unknown>; enabled?: boolean; description: string }
 /** How each stored reach value reads in the panel's one line: the settings' words, short enough to sit beside a folder. */
 const REACH_TOOLS: Record<string, string> = { none: "no tools", "read-only": "read-only tools", default: "all the CLI's tools" };
 
-interface Turn { id: number; ts: string; role: "user" | "assistant"; text: string; meta?: { adapter: string; model: string | null; cost_usd: number; resumed: boolean; run_id: number | null; error?: string | null; workflow?: string | null; change?: Change | null; change_error?: string | null; schedule?: Schedule | null; schedule_error?: string | null; options?: { question: string; options: string[] } | null; compacted_from?: number | null } }
+interface Turn { id: number; ts: string; role: "user" | "assistant"; text: string; meta?: { adapter: string; model: string | null; cost_usd: number; resumed: boolean; run_id: number | null; error?: string | null; workflow?: string | null; change?: Change | null; change_error?: string | null; schedule?: Schedule | null; schedule_error?: string | null; options?: { question: string; options: string[] } | null; compacted_from?: number | null; proposal?: Proposal | null; proposal_error?: string | null } }
 
 const sameCanvas = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -159,6 +164,9 @@ export function Assistant({ runId, designing = null, open, setOpen }: { runId: n
    * typing.
    */
   const [refined, setRefined, clearRefined] = useDraft<{ mine: string; refined: string; cost: number } | null>("refine:assistant:question", null);
+  /** The turn whose proposal is being created; `problem` is that request's failure, if any. */
+  const [creating, setCreating] = useState<number | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const [refining, setRefining] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
   const refine = async () => {
@@ -318,6 +326,33 @@ export function Assistant({ runId, designing = null, open, setOpen }: { runId: n
                       </div>
                     ) : <div className="mt-1 text-purple-800">Open {t.meta.change.workflow} in the designer to undo or apply this.</div>}
                   </div>
+                )}
+                {t.meta?.proposal && !inDesigner && (
+                  // Built from a description without a canvas: offered, never created unseen. The person clicks, chief
+                  // writes it through the same endpoint the designer uses, and the designer opens on it.
+                  <div data-testid="assistant-proposal" className="mt-2 rounded border border-purple-200 bg-purple-50 px-2 py-1.5 text-xs text-purple-950">
+                    <div className="font-semibold">New workflow “{t.meta.proposal.name}”</div>
+                    <div className="mt-0.5">{t.meta.proposal.steps} {t.meta.proposal.steps === 1 ? "step" : "steps"}: {(t.meta.proposal.definition.nodes ?? []).map((n: any) => `${n.id} (${n.type})`).join(", ")}</div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <AsyncButton data-testid="assistant-proposal-create" variant="default" className="px-2 py-0.5 text-xs"
+                        busy={creating === t.id}
+                        onClick={async () => {
+                          if (!t.meta?.proposal) return;
+                          setCreating(t.id); setProblem(null);
+                          try {
+                            await api("PUT", `/api/workflows/${encodeURIComponent(t.meta.proposal.name)}`, { definition: t.meta.proposal.definition });
+                            go(`/designer/${encodeURIComponent(t.meta.proposal.name)}`);
+                          } catch (e: any) { setProblem(e.message); } finally { setCreating(null); }
+                        }}>
+                        Create it and open the designer
+                      </AsyncButton>
+                      <span className="text-purple-800">Nothing is created until you press it.</span>
+                    </div>
+                    {problem && <div data-testid="assistant-proposal-error" className="mt-1 text-destructive">{problem}</div>}
+                  </div>
+                )}
+                {t.meta?.proposal_error && (
+                  <div data-testid="assistant-proposal-error-box" className="mt-2 whitespace-pre-wrap rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950"><b>That workflow was not accepted.</b> chief did not take what I wrote:{"\n"}{t.meta.proposal_error}</div>
                 )}
                 {t.meta?.change_error && (
                   <div data-testid="assistant-change-error" className="mt-2 whitespace-pre-wrap rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950"><b>The canvas was not changed.</b> chief did not accept the workflow I wrote:{"\n"}{t.meta.change_error}</div>

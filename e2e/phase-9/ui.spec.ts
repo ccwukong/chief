@@ -300,7 +300,10 @@ test("E9.3-3 new-run inputs, settings and import text survive a refresh", async 
   await expect(tid(page, "run-status")).toHaveText("completed");
   expect(chief.calls()[0].prompt).toContain("hello the whole team");
   await page.goto(srv.url + "/#/runs");
-  await expect(tid(page, "new-run-inputs")).toHaveValue("");
+  // What was typed is gone; the box comes back as the inputs' **shape**, with the workflow's own default in it (15.116),
+  // rather than empty or as a grey sample nobody can edit.
+  await expect(tid(page, "new-run-inputs")).toHaveValue(/\{\s*"who": "nobody"\s*\}/);
+  await expect(tid(page, "new-run-inputs")).not.toHaveValue(/the whole team/);
 
   await page.goto(srv.url + "/#/settings");
   await expect(tid(page, "setting-output-size-limit")).toHaveValue("20000");
@@ -3517,7 +3520,9 @@ test("E15.49-1 the Start run card is one line, and only shows an inputs editor w
   // A workflow that uses one does: the editor is there, still the only way in (9.48 removed the input list).
   await tid(page, "new-run-workflow").selectOption("takes-inputs");
   await expect(tid(page, "new-run-inputs")).toBeVisible();
-  await expect(tid(page, "new-run-inputs")).toHaveAttribute("placeholder", /"who": ""/);
+  // The inputs are **in the box**, not a placeholder (15.116): the shape is what a run is filled into, and the workflow's
+  // own default is already in it — this workflow defaults `who` to "nobody", so that is what the box starts with.
+  await expect(tid(page, "new-run-inputs")).toHaveValue(/"who": "nobody"/);
   await expect(tid(page, "new-run-inputs-refs")).toHaveCount(0);
   await expect(tid(page, "new-run-inputs-template")).toHaveCount(0);
   const withBox = await row();
@@ -3535,6 +3540,58 @@ test("E15.49-1 the Start run card is one line, and only shows an inputs editor w
   await expect(tid(page, "new-run-start")).toBeInViewport();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, "the page does not scroll sideways at 375 px").toBeLessThanOrEqual(0);
+});
+
+test("E15.116-1 the inputs are given as JSON to fill in, with the workflow's defaults, and follow the workflow", async ({ chief, page }) => {
+  // Reported 2026-11-23: *"when i wanna add the parameters for the JSON input before i run the workflow, the given scheme is
+  // just a placeholder, and I'm not able to use it directly, and i will have to manually input the json data, which is
+  // super tedious"*. The shape was a grey sample behind an empty box, so a nested object meant typing keys, braces and all.
+  // It is real text now: the shape, with the workflow's own default where it has one, so only what the workflow leaves
+  // open is left to type.
+  chief.importWorkflow("name: nested\ninputs:\n  collect-evidence:\n    colleague_name: ''\n    relationship: peer\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'about {{inputs.collect-evidence.colleague_name}} as {{inputs.collect-evidence.relationship}}' }\n");
+  chief.importWorkflow("name: plain\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'x' }\n");
+  const srv = await chief.serve();
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`${srv.url}/#/runs`);
+    const box = tid(page, "new-run-inputs");
+    await expect(box).toBeVisible();
+    // Real JSON in the box — the whole nested shape — with the default already filled in and the open field blank.
+    await expect(box).toHaveValue(/"collect-evidence"/);
+    await expect(box).toHaveValue(/"relationship": "peer"/);
+    await expect(box).toHaveValue(/"colleague_name": ""/);
+    expect(JSON.parse(await box.inputValue())).toEqual({ "collect-evidence": { colleague_name: "", relationship: "peer" } });
+
+    // It is editable as it stands: filling one value is the whole job, and the run is refused only for the blank.
+    await box.fill(JSON.stringify({ "collect-evidence": { colleague_name: "Dana", relationship: "peer" } }, null, 2));
+    await tid(page, "new-run-start").click();
+    await expect(tid(page, "run-status")).toHaveText("completed", { timeout: 30_000 });
+    expect(chief.calls()[0].prompt).toContain("about Dana");
+
+    // After a run the box is the shape again, not empty: the next run is filled into the same shape.
+    await page.goto(`${srv.url}/#/runs`);
+    await expect(box).toHaveValue(/"relationship": "peer"/);
+    await expect(box).not.toHaveValue(/Dana/);
+
+    // Switching to another workflow gives that workflow's shape, and back again gives the first one's.
+    await tid(page, "new-run-workflow").selectOption("plain");
+    await expect(tid(page, "new-run-inputs-block")).toHaveCount(0);
+    await tid(page, "new-run-workflow").selectOption("nested");
+    await expect(box).toHaveValue(/"relationship": "peer"/);
+
+    // Text the person typed is theirs: changing the workflow does not throw it away.
+    await box.fill('{"collect-evidence": {"colleague_name": "Sam", "relationship": "manager"}}');
+    await tid(page, "new-run-workflow").selectOption("plain");
+    await tid(page, "new-run-workflow").selectOption("nested");
+    await expect(box).toHaveValue(/Sam/);
+
+    // And "Fill in the shape" is always there to get back to it.
+    await tid(page, "new-run-inputs-shape").click();
+    await expect(box).toHaveValue(/"colleague_name": ""/);
+    await expect(box).toHaveValue(/"relationship": "peer"/);
+  } finally {
+    await srv.stop();
+  }
 });
 
 test("E15.55-1 Settings › MCP servers lists them read-only and shows each CLI's own add command", async ({ chief, boot, page }) => {

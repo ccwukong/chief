@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEven
 import { agentList, api, get, getPage, tokenCount, usd } from "../api";
 import { SHOW_COST } from "../features";
 import { AsyncButton, ConfirmDeleteRuns, ErrorBox, FINISHED, go, Pager, readDraft, Status, TrashButton, useDraft, useWindowWidth } from "../ui";
-import { blankInputs, RunInputsEditor, type InputRef } from "../run-inputs";
+import { blankInputs, inputTemplate, RunInputsEditor, type InputRef } from "../run-inputs";
 import { RunDetail } from "./run-detail";
 import { usePolling } from "../polling";
 import { Button } from "../components/ui/button";
@@ -25,7 +25,7 @@ export function Runs({ openId = null }: { openId?: number | null }) {
   const [total, setTotal] = useState(0);
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [workflow, setWorkflow] = useDraft("new-run:workflow", "");
-  const [inputs, setInputs, clearInputs] = useDraft("new-run:inputs", "");
+  const [inputs, setInputs] = useDraft("new-run:inputs", "");
   const [only, setOnly] = useDraft("runs:filter", "");
   const [perPage, setPerPage] = useDraft("runs:per-page", 10);
   const [page, setPage] = useState(1);
@@ -130,7 +130,9 @@ export function Runs({ openId = null }: { openId?: number | null }) {
     }
     try {
       const d = await api("POST", "/api/runs", { workflow, inputs: parsed });
-      clearInputs();
+      // What was typed is cleared; the inputs' **shape** comes back, because the next run of this workflow is filled into
+      // the same shape and typing it again was the complaint (15.116).
+      setInputs(refs.length ? JSON.stringify(inputTemplate(refs), null, 2) : "");
       go(`/runs/${d.run.id}`);
     } catch (e: any) { setError(e.message); }
   };

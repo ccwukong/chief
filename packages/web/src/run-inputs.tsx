@@ -3,6 +3,8 @@
  * starts. The server lists the inputs a workflow uses (`input_refs` of GET /api/workflows/:name);
  * what is typed is a JSON object of the same shape, laid over the workflow's defaults level by level.
  */
+import { useEffect, useRef } from "react";
+import { Button } from "./components/ui/button";
 import { Help } from "./ui";
 import { JsonEditor } from "./json-editor";
 
@@ -36,13 +38,18 @@ function setPath(obj: Obj, dotted: string, value: unknown) {
 }
 
 /**
- * A JSON object with every input the workflow uses, each left blank to be filled in for this run.
- * The values stored in the workflow are deliberately not copied in: what a run is about (a pull
- * request link, a ticket) differs from run to run, and a filled-in box would suggest it does not.
+ * The inputs the workflow uses, as JSON to start from: the workflow's own default where it has one, and an empty text
+ * where it does not.
+ *
+ * It used to be blanks only, and only a **placeholder** at that — so starting a run meant typing the whole nested object
+ * by hand, keys and braces included, from a grey sample nobody could edit (reported 2026-11-23: *"the given scheme is
+ * just a placeholder, and I'm not able to use it directly, and i will have to manually input the json data, which is
+ * super tedious"*). What differs from run to run is the **value**, not the shape, so the shape is given as real text and
+ * the default is the value the run would get anyway: only what the workflow leaves open is left to type.
  */
 export function inputTemplate(refs: InputRef[]): Obj {
   const out: Obj = {};
-  for (const r of refs) setPath(out, r.path, "");
+  for (const r of refs) setPath(out, r.path, r.has_default ? r.default ?? "" : "");
   return out;
 }
 
@@ -71,9 +78,34 @@ const pretty = (v: unknown) => JSON.stringify(v, null, 2);
 export function RunInputsEditor({ refs, value, onChange, testid = "new-run-inputs", rows = 3, label = "Inputs (JSON, optional)" }: { refs: InputRef[]; value: string; onChange: (v: string) => void; testid?: string; rows?: number; label?: string }) {
   const parsed = parseInputs(value);
   const template = inputTemplate(refs);
+  // The shape is **put in the box**, not shown behind it: see inputTemplate's note. Written once per set of inputs, and
+  // only while the box is empty, so a draft is never overwritten and an emptied box is not refilled under the person.
+  const shape = refs.map((r) => `${r.path}:${r.has_default ? "d" : "b"}`).join("|");
+  // What this editor last wrote: a box still holding exactly that has not been touched, so a change of workflow may
+  // replace it. Anything else in the box is the person's and is left alone. (Both gaps found in a browser: switching to
+  // another workflow kept the previous one's shape, and after a run the box came back empty.)
+  const written = useRef<string | null>(null);
+  useEffect(() => {
+    const next = refs.length ? pretty(inputTemplate(refs)) : "";
+    const untouched = !value.trim() || value === written.current;
+    if (!untouched) return;
+    if (value === next) { written.current = next || null; return; }
+    written.current = next || null;
+    onChange(next);
+    // `value` is deliberately not a dependency: this runs when the shape changes, not on every keystroke. The guard above
+    // reads the current text through the ref, so what is typed is never overwritten.
+  }, [shape]);
   return (
     <div data-testid={`${testid}-editor`}>
-      <div className="mb-1"><span className="label mb-0">{label}<Help id="new-run-inputs" /></span></div>
+      <div className="mb-1 flex flex-wrap items-baseline gap-2">
+        <span className="label mb-0">{label}<Help id="new-run-inputs" /></span>
+        {refs.length > 0 && (
+          // Always available, not only on a first visit: a person who emptied the box by hand gets the shape back without
+          // closing and reopening the page.
+          <Button variant="link" size="sm" className="h-auto px-0 text-2xs" type="button" data-testid={`${testid}-shape`}
+            onClick={() => onChange(pretty(inputTemplate(refs)))}>Fill in the shape</Button>
+        )}
+      </div>
       <div><JsonEditor testid={testid} rows={rows} invalid={!parsed} placeholder={refs.length ? pretty(template) : "{ }   leave empty to use the workflow's own inputs"} value={value} onChange={onChange} /></div>
       {!parsed && <div className="text-xs text-red-700">Inputs must be a JSON object.</div>}
     </div>

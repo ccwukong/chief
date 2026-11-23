@@ -10,7 +10,7 @@ import type { Store } from "./store/store.ts";
 import type { BuiltinTools } from "./adapters/types.ts";
 import type { McpServerRow, MessageRow, NodeRunRow, RunRow } from "./store/types.ts";
 import { mergeInputs } from "./workflow/inputs.ts";
-import { canonical, checkProposal, describeCanvas, DESIGN_INSTRUCTIONS, DESIGN_REMINDER, readReply, SCHEDULE_INSTRUCTIONS, summarizeChange, type AssistantOptions, type ScheduleProposal, type WorkflowChange } from "./assistant-design.ts";
+import { ASK_WHEN_THIN, canonical, checkProposal, describeCanvas, DESIGN_INSTRUCTIONS, DESIGN_REMINDER, readReply, SCHEDULE_INSTRUCTIONS, summarizeChange, WORKFLOW_FORMAT, type AssistantOptions, type ScheduleProposal, type WorkflowChange } from "./assistant-design.ts";
 import { addSchedule, checkSchedule, setSchedule } from "./ops.ts";
 import { describeCron, minuteKey, nextRun } from "./util/cron.ts";
 
@@ -150,9 +150,25 @@ function reachInstructions(t: { builtin: BuiltinTools; servers: McpServerRow[]; 
   return lines;
 }
 
+/**
+ * Creating a workflow from the panel when it is **not** in the designer: a `chief-workflow` block is a proposal for a
+ * **new** workflow, which chief offers and the person creates.
+ *
+ * This is the half that was missing on 2026-11-23. Outside the designer the agent was given neither the workflow format
+ * nor any way to send one, so a person who described a workflow from the run list was told *"chief hasn't given me a
+ * format for workflow changes in this conversation"* — true, and useless. It had the format in the designer and nowhere
+ * else, although describing a workflow is what the panel is for.
+ */
+const NEW_WORKFLOW_INSTRUCTIONS = [
+  "## Proposing a workflow",
+  "- You are **not** in the designer, so there is no canvas to change. When the person asks for a workflow to be built or changed, end your reply with the COMPLETE workflow as one JSON object in a fenced block whose first line is ```chief-workflow — the same format as above. chief checks it and offers it as a new workflow; the person creates it with one click and lands in the designer with it open. Nothing is created until they do.",
+  "- Send no block when you are only answering a question, or when you are asking something first. A block means \"this is a workflow I propose\".",
+  "- A new workflow cannot carry `model`, `agent` or a script step's `sandbox`: those are the person's choices in the designer, and chief refuses a workflow that sets them. Leave them out.",
+];
+
 /** The system prompt for one call: the shared rules plus what this particular agent may reach. */
 function instructionsFor(t: { builtin: BuiltinTools; servers: McpServerRow[]; label: string }): string {
-  return [...INSTRUCTIONS, ...reachInstructions(t), ""].join("\n");
+  return [...INSTRUCTIONS, ...reachInstructions(t), ...ASK_WHEN_THIN, ...WORKFLOW_FORMAT, ...NEW_WORKFLOW_INSTRUCTIONS, ""].join("\n");
 }
 
 function followUpPrompt(run: RunRow, question: string): string {
@@ -350,7 +366,7 @@ export function assistantActions(store: Store, thread?: number): { tool: string;
 export function assistantConversation(store: Store, thread?: number): AssistantTurn[] {
   return store.assistantMessages({ roles: ["user", "assistant"], thread: thread ?? store.currentAssistantThread() }).map((m) => m.role === "user"
     ? { id: m.id, ts: m.ts, role: "user" as const, text: m.content, meta: { adapter: "", model: null, cost_usd: 0, resumed: false, run_id: m.meta?.run_id ?? null, workflow: m.meta?.workflow ?? null } }
-    : { id: m.id, ts: m.ts, role: "assistant" as const, text: m.content, meta: { adapter: m.meta?.adapter ?? "", model: m.meta?.model ?? null, cost_usd: m.meta?.cost_usd ?? 0, resumed: !!m.meta?.resumed, run_id: m.meta?.run_id ?? null, error: m.meta?.error ?? null, workflow: m.meta?.workflow ?? null, change: m.meta?.change ?? null, change_error: m.meta?.change_error ?? null, schedule: m.meta?.schedule ?? null, schedule_error: m.meta?.schedule_error ?? null, options: m.meta?.options ?? null, compacted_from: m.meta?.compacted_from ?? null } });
+    : { id: m.id, ts: m.ts, role: "assistant" as const, text: m.content, meta: { adapter: m.meta?.adapter ?? "", model: m.meta?.model ?? null, cost_usd: m.meta?.cost_usd ?? 0, resumed: !!m.meta?.resumed, run_id: m.meta?.run_id ?? null, error: m.meta?.error ?? null, workflow: m.meta?.workflow ?? null, change: m.meta?.change ?? null, change_error: m.meta?.change_error ?? null, schedule: m.meta?.schedule ?? null, schedule_error: m.meta?.schedule_error ?? null, options: m.meta?.options ?? null, compacted_from: m.meta?.compacted_from ?? null, proposal: m.meta?.proposal ?? null, proposal_error: m.meta?.proposal_error ?? null } });
 }
 
 /** How many of the latest exchanges a fresh session is reminded of. */
@@ -606,6 +622,12 @@ async function answerNow(store: Store, v: { question: string; model?: string; ru
   // In the designer the agent may also send a whole workflow. One correction is asked for when either the
   // workflow or the schedule is not acceptable.
   let text = res.text.trim();
+  /**
+   * A workflow the agent proposed from outside the designer — a new one, checked, waiting for the person to create it.
+   * `null` when it proposed none; `proposalError` when what it sent would not be accepted as a workflow.
+   */
+  let proposal: { name: string; definition: any; steps: number } | null = null;
+  let proposalError: string | null = null;
   let change: WorkflowChange | null = null;
   let changeError: string | null = null;
   let schedule: ScheduleChange | null = null;
@@ -614,7 +636,17 @@ async function answerNow(store: Store, v: { question: string; model?: string; ru
   if (!res.error) {
     let reply = readReply(text);
     let checked = canvas && reply.workflow ? checkProposal(canvas.definition, reply.workflow) : null;
-    let problems = canvas ? (reply.workflowError ? [reply.workflowError] : checked && !checked.ok ? checked.errors : []) : [];
+    // A workflow block is checked in **both** modes now: as a change to the canvas, or — with no canvas — as a new
+    // workflow to propose. A new one is checked against an empty definition, so nothing is inherited from anywhere.
+    const proposalProblems = (w: unknown, err: string | undefined, prior: string[]) => {
+      // Nothing sent back when a block was asked for: the reason it was refused still stands, exactly as the canvas path
+      // does it. Without `prior`, a correction that never arrived erased the refusal and the proposal looked like none.
+      if (!w) return prior;
+      if (err) return [err];
+      const v = checkProposal({ nodes: [] }, w);
+      return v.ok ? [] : v.errors;
+    };
+    let problems = canvas ? (reply.workflowError ? [reply.workflowError] : checked && !checked.ok ? checked.errors : []) : proposalProblems(reply.workflow, reply.workflowError, []);
     let sched = checkScheduleReply(store, canvasName, reply, !!canvas);
     let schedProblems = reply.scheduleError ? [reply.scheduleError] : sched.error ? [sched.error] : [];
     if ((problems.length || schedProblems.length) && res.sessionId) {
@@ -631,13 +663,25 @@ async function answerNow(store: Store, v: { question: string; model?: string; ru
         reply = readReply(again.text.trim());
         checked = canvas && reply.workflow ? checkProposal(canvas.definition, reply.workflow) : null;
         // A problem it was asked to fix and did not send again is still that problem.
-        problems = canvas ? (reply.workflowError ? [reply.workflowError] : checked && !checked.ok ? checked.errors : workflowReasons.length && !reply.workflow ? workflowReasons : []) : [];
+        problems = canvas
+          ? (reply.workflowError ? [reply.workflowError] : checked && !checked.ok ? checked.errors : workflowReasons.length && !reply.workflow ? workflowReasons : [])
+          : proposalProblems(reply.workflow, reply.workflowError, workflowReasons);
         sched = checkScheduleReply(store, canvasName, reply, !!canvas);
         schedProblems = reply.scheduleError ? [reply.scheduleError] : sched.error ? [sched.error] : scheduleReasons.length && !reply.schedule ? scheduleReasons : [];
       }
     }
     text = reply.text;
     options = reply.options ?? null;
+    // Outside the designer a workflow block is a proposal for a **new** workflow, checked like any other: the same rules
+    // (a step's `model`, `agent` and `sandbox` are the person's), against an empty canvas so nothing is inherited. The
+    // reason goes in `proposalError` whether or not a corrected block came back — a correction that did not arrive is
+    // still a refusal the person needs the reason for (the mistake the first version made: it recorded the reason in
+    // `changeError`, which is the canvas's field, so a refused proposal looked like no proposal at all).
+    if (!canvas && problems.length) proposalError = problems.join("\n");
+    else if (!canvas && reply.workflow) {
+      const v = checkProposal({ nodes: [] }, reply.workflow);
+      proposal = { name: String(v.workflow.name ?? ""), definition: v.workflow, steps: Array.isArray(v.workflow.nodes) ? v.workflow.nodes.length : 0 };
+    }
     if (problems.length) changeError = problems.join("\n");
     else if (canvas && checked?.ok && canonical(checked.workflow) !== canonical(canvas.definition)) {
       change = { workflow: checked.workflow.name, before: canvas.definition, after: checked.workflow, summary: summarizeChange(canvas.definition, checked.workflow) };
@@ -669,7 +713,7 @@ async function answerNow(store: Store, v: { question: string; model?: string; ru
       ...(compacted ? { compacted_from: compacted } : {}),
       // What the canvas is expected to be after this answer: the next question continues the session while it still is.
       fingerprint: canvas ? JSON.stringify({ design: canonical(change ? change.after : canvas.definition) }) : fingerprint,
-      ...(canvas ? { workflow: change?.workflow ?? workflowName, change, change_error: changeError, schedule, schedule_error: scheduleError, options, replies } : { schedule, schedule_error: scheduleError, replies }),
+      ...(canvas ? { workflow: change?.workflow ?? workflowName, change, change_error: changeError, schedule, schedule_error: scheduleError, options, replies } : { proposal, proposal_error: proposalError, schedule, schedule_error: scheduleError, options, replies }),
     },
   });
   if (error) throw new EngineError(`${adapterName} could not answer: ${error}`);

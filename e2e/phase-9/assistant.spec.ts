@@ -856,6 +856,77 @@ test("E15.95-1 Stop interrupts the answer and the conversation carries on", asyn
   }
 });
 
+test("E15.115-1 a workflow can be built from the panel when it is not in the designer, and a thin request is asked about", async ({ chief, page }) => {
+  // Reported 2026-11-23: *"The chief bot is unable to create a workflow just based on description initially … the first
+  // response should suggest me how to improve my description, or provide some recommendations rather than asking me to
+  // directly do it the manual way"*. Both halves were real. Outside the designer the agent was given no workflow format
+  // at all, so its answer was the true-but-useless *"chief hasn't given me a format for workflow changes in this
+  // conversation"* and a design to copy by hand; and a thin description got homework instead of a question.
+  const srv = await chief.serve();
+  try {
+    await page.setViewportSize({ width: 1400, height: 950 });
+    // The run list: no canvas, which is where the report came from.
+    await page.goto(`${srv.url}/#/runs`);
+    await expect(tid(page, "sidenav")).toBeVisible();
+    if (!(await tid(page, "assistant-panel").isVisible().catch(() => false))) await tid(page, "nav-assistant").click();
+
+    // 1. A description becomes a proposed workflow: offered, not created.
+    const built = { name: "peer-feedback", nodes: [
+      { id: "collect", type: "agent", prompt: "Collect the evidence." },
+      { id: "review", type: "gate", kind: "approve", value: "{{nodes.collect.output}}" },
+      { id: "write", type: "agent", prompt: "Write it up from {{nodes.review.output}}." },
+    ], edges: [{ from: "collect", to: "review" }, { from: "review", to: "write" }] };
+    const block = "```chief-workflow\n" + JSON.stringify(built) + "\n```";
+    await tid(page, "assistant-question").fill(`build a peer feedback workflow ${fake({ text: `Three steps, with a gate before the write.\n\n${block}` })}`);
+    await tid(page, "assistant-send").click();
+    const card = tid(page, "assistant-proposal");
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card).toContainText("New workflow");
+    await expect(card).toContainText("peer-feedback");
+    await expect(card).toContainText("collect (agent), review (gate), write (agent)");
+    // Nothing is written until the person presses it.
+    expect((await srv.api("GET", "/api/workflows")).body, "offered, not created").toEqual([]);
+
+    // What the CLI was asked, which is the half that was missing: the format, and that a block here is a proposal.
+    const prompt = chief.calls().at(-1)!.prompt;
+    expect(prompt).toContain("## The workflow format");
+    expect(prompt).toContain("## Proposing a workflow");
+    expect(prompt).toContain("When the request is too thin to build, ask");
+
+    // One click creates it through the endpoint the designer uses, and the designer opens on it.
+    await tid(page, "assistant-proposal-create").click();
+    await expect(page).toHaveURL(/#\/designer\/peer-feedback$/);
+    await expect.poll(async () => (await srv.api("GET", "/api/workflows")).body.map((w: any) => w.name)).toEqual(["peer-feedback"]);
+    // The stored workflow is the one it proposed, steps and arrows.
+    const stored = (await srv.api("GET", "/api/workflows/peer-feedback")).body;
+    expect(stored.definition.nodes.map((n: any) => n.id)).toEqual(["collect", "review", "write"]);
+    expect(stored.definition.edges).toEqual([{ from: "collect", to: "review" }, { from: "review", to: "write" }]);
+
+    // 2. A description that is too thin gets questions with options, and no proposal: what the report asked for.
+    await srv.api("DELETE", "/api/assistant");
+    await page.goto(`${srv.url}/#/runs`);
+    await expect(tid(page, "assistant-panel")).toBeVisible();
+    await tid(page, "assistant-question").fill(`make me a review thing ${fake({ text: "Two things first — where should the data come from?\n\n```chief-options\n{\"question\": \"Where should the data come from?\", \"options\": [\"From GitHub pull requests\", \"From Slack channels\"]}\n```" })}`);
+    await tid(page, "assistant-send").click();
+    await expect(tid(page, "assistant-options")).toBeVisible({ timeout: 20_000 });
+    await expect(tid(page, "assistant-option-0")).toContainText("From GitHub pull requests");
+    await expect(tid(page, "assistant-proposal"), "no workflow on a guess").toHaveCount(0);
+
+    // 3. A proposal that sets the person's own choices is refused, with the reason — not silently accepted.
+    await srv.api("DELETE", "/api/assistant");
+    await page.goto(`${srv.url}/#/runs`);
+    await expect(tid(page, "assistant-panel")).toBeVisible();
+    const withModel = { ...built, nodes: [{ ...built.nodes[0], model: "opus" }, built.nodes[1], built.nodes[2]] };
+    await tid(page, "assistant-question").fill(`again ${fake({ text: "Here.\n\n```chief-workflow\n" + JSON.stringify(withModel) + "\n```" })}`);
+    await tid(page, "assistant-send").click();
+    await expect(tid(page, "assistant-proposal-error-box")).toContainText("model", { timeout: 20_000 });
+    await expect(tid(page, "assistant-proposal"), "nothing offered").toHaveCount(0);
+    expect((await srv.api("GET", "/api/workflows")).body.length, "and nothing written").toBe(1);
+  } finally {
+    await srv.stop();
+  }
+});
+
 test("E15.114-1 the thinking hint is drawn like the answer, not as a card", async ({ chief, page }) => {
   // Asked 2026-11-23: *"no white background needed for chief bot's thinking hints"*. It was a bordered white box with a
   // spinner — filled, rounded, elevated — sitting where the answer would be, so it read as a third participant between the
