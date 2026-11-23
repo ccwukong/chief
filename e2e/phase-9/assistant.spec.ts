@@ -856,6 +856,37 @@ test("E15.95-1 Stop interrupts the answer and the conversation carries on", asyn
   }
 });
 
+test("E15.114-1 the thinking hint is drawn like the answer, not as a card", async ({ chief, page }) => {
+  // Asked 2026-11-23: *"no white background needed for chief bot's thinking hints"*. It was a bordered white box with a
+  // spinner — filled, rounded, elevated — sitting where the answer would be, so it read as a third participant between the
+  // question and the reply. It now uses the answer's own shape: the 2 px left rule and nothing else.
+  const srv = await chief.serve();
+  try {
+    await page.setViewportSize({ width: 1400, height: 950 });
+    await page.goto(`${srv.url}/#/runs`);
+    await expect(tid(page, "sidenav")).toBeVisible();
+    if (!(await tid(page, "assistant-panel").isVisible().catch(() => false))) await tid(page, "nav-assistant").click();
+    // A slow answer, so the hint is on screen long enough to measure.
+    await tid(page, "assistant-question").fill(`a slow one ${fake({ text: "the slow answer", sleep_ms: 20_000 })}`);
+    await tid(page, "assistant-question").press("Enter");
+    const hint = tid(page, "assistant-thinking");
+    await expect(hint).toBeVisible();
+    const look = await hint.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { bg: s.backgroundColor, top: s.borderTopWidth, right: s.borderRightWidth, bottom: s.borderBottomWidth, left: s.borderLeftWidth, radius: s.borderTopLeftRadius, shadow: s.boxShadow };
+    });
+    expect(look.bg === "rgba(0, 0, 0, 0)" || look.bg === "transparent", `no fill (was ${look.bg})`).toBe(true);
+    expect([look.top, look.right, look.bottom], "no box around it").toEqual(["0px", "0px", "0px"]);
+    expect(look.left, "the answer's own left rule").toBe("2px");
+    expect(look.radius, "not a bubble").toBe("0px");
+    expect(look.shadow, "and not lifted off the page").toBe("none");
+    // And it says what it is doing, which is the only thing a state line must do.
+    await expect(hint).toContainText(/Working on the workflow|Reading what chief has recorded/);
+  } finally {
+    await srv.stop();
+  }
+});
+
 test("E15.113-1 a rough question in the chat box is refined by the bot's own CLI, and the words come back", async ({ chief, page }) => {
   // Asked 2026-11-23: *"add refine prompt using agent for the prompt i typed in the chief bot chatbox, this is to ensure my
   // random thoughts or words can be rephrased in a better agent-friendly prompt"*. It is the designer's Refine (9.37) with

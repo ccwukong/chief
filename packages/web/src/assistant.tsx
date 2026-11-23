@@ -357,7 +357,11 @@ export function Assistant({ runId, designing = null, open, setOpen }: { runId: n
             {pending && (
               <>
                 <div data-testid="assistant-turn-pending" className="ml-8 whitespace-pre-wrap rounded-lg bg-slate-200 px-3 py-1.5 text-sm text-slate-900 dark:bg-slate-700 dark:text-slate-100">{pending}</div>
-                <div className="mr-8 flex items-center gap-2 rounded-lg border border-slate-200 bg-surface px-3 py-2 text-sm text-slate-500"><Spinner /> {inDesigner ? "Working on the workflow…" : "Reading what chief has recorded…"}</div>
+                {/* The thinking hint is drawn like the answer that replaces it — a left rule, no card — rather than a
+                    white bubble with a border. It is a state of the conversation, not a message someone sent, and a filled
+                    box above a plain answer read as a third participant (asked 2026-11-23: *"no white background needed for
+                    chief bot's thinking hints"*). */}
+                <div data-testid="assistant-thinking" className="mr-8 flex items-center gap-2 border-l-2 border-slate-200 px-2 py-1 text-sm text-slate-500"><Spinner /> {inDesigner ? "Working on the workflow…" : "Reading what chief has recorded…"}</div>
               </>
             )}
           </div>
