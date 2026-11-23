@@ -149,6 +149,29 @@ export function Assistant({ runId, designing = null, open, setOpen }: { runId: n
     try { await api("DELETE", `/api/assistant/threads/${id}`); await load(); await loadThreads(); }
     catch (e: any) { setError(e.message); }
   };
+  /**
+   * Rewrite what was typed into something the assistant can act on (asked 2026-11-23: *"my random thoughts or words
+   * can be rephrased in a better agent-friendly prompt"*).
+   *
+   * The same mechanism as the designer's Refine — `POST /api/prompts/refine` with the bot's own CLI and model — with
+   * the `question` kind, whose rules are written for a message rather than for a step prompt. **What was typed is kept
+   * as a draft**, so "Back to my text" survives a refresh: the no-data-loss rule applies to a rewrite as much as to
+   * typing.
+   */
+  const [refined, setRefined, clearRefined] = useDraft<{ mine: string; refined: string; cost: number } | null>("refine:assistant:question", null);
+  const [refining, setRefining] = useState(false);
+  const [refineError, setRefineError] = useState<string | null>(null);
+  const refine = async () => {
+    setRefining(true);
+    setRefineError(null);
+    try {
+      const r = await api("POST", "/api/prompts/refine", { text: question, kind: "question", ...(info?.adapter ? { adapter: info.adapter } : {}), ...(info?.model ? { model: info.model } : {}) });
+      // Refined twice: "my text" stays what the person typed, not the first rewrite.
+      setRefined((cur) => ({ mine: cur && cur.refined === question ? cur.mine : question, refined: r.text, cost: r.cost_usd }));
+      setQuestion(r.text);
+    } catch (e: any) { setRefineError(e.message); } finally { setRefining(false); }
+  };
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void ask(question); }
     // The dropdown is a layer over the panel, so Escape closes it first; the panel closes on the next press.
@@ -402,9 +425,32 @@ export function Assistant({ runId, designing = null, open, setOpen }: { runId: n
                 </ol>
               </details>
             )}
+            {refineError && <div data-testid="assistant-refine-error" className="mt-1 text-2xs text-destructive">{refineError}</div>}
+            {refined && (
+              <div data-testid="assistant-refined" className="mt-1.5 flex flex-wrap items-center gap-2 text-2xs text-slate-600">
+                <span>Rewritten by {info?.adapter ?? "the agent CLI"}{SHOW_COST && refined.cost ? ` (${usd(refined.cost)})` : ""}. Check it says what you meant.</span>
+                <Button variant="link" size="sm" className="h-auto px-0" type="button" data-testid="assistant-refine-undo"
+                  onClick={() => { setQuestion(refined.mine); clearRefined(); }}>Back to my text</Button>
+                <Button variant="ghost" size="sm" className="h-auto px-1 text-2xs text-slate-500" type="button" data-testid="assistant-refine-keep" onClick={clearRefined}>Keep it</Button>
+              </div>
+            )}
             <div className="mt-1.5 flex items-center gap-2">
               {/* While it works there is no hint to give: Enter does nothing (a second question cannot start until this one
                   ends), and the Stop button beside it is the only thing to press. */}
+              {!pending && (
+                // A ghost glyph and a word, like the panel's other chrome: it helps with the box rather than acting on the
+                // conversation (the same argument as the bin, 15.94).
+                <Button variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 px-1.5 text-2xs text-slate-600"
+                  type="button" data-testid="assistant-refine" disabled={!question.trim() || refining}
+                  title={question.trim() ? `Ask ${info?.adapter ?? "the agent CLI"} to rewrite this so the assistant understands exactly what you want. You can go back to your own words.` : "Type something first"}
+                  onClick={() => void refine()}>
+                  <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0" fill="currentColor">
+                    <path d="M8 1.5l1.4 3.9 3.9 1.4-3.9 1.4L8 12.1 6.6 8.2 2.7 6.8l3.9-1.4z" />
+                    <path d="M12.6 10.4l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z" />
+                  </svg>
+                  {refining ? "Refining…" : "Refine"}
+                </Button>
+              )}
               {!pending && <span className="hidden shrink-0 text-2xs text-slate-400 sm:inline">Enter sends · Shift+Enter new line</span>}
               <span className="flex-1" />
               {/*

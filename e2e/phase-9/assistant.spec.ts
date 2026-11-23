@@ -855,3 +855,64 @@ test("E15.95-1 Stop interrupts the answer and the conversation carries on", asyn
     await srv.stop();
   }
 });
+
+test("E15.113-1 a rough question in the chat box is refined by the bot's own CLI, and the words come back", async ({ chief, page }) => {
+  // Asked 2026-11-23: *"add refine prompt using agent for the prompt i typed in the chief bot chatbox, this is to ensure my
+  // random thoughts or words can be rephrased in a better agent-friendly prompt"*. It is the designer's Refine (9.37) with
+  // a **question** kind: a chat message is read once by an assistant that acts on it, so what the person left implicit is
+  // what goes wrong — and the rules therefore say not to invent a workflow, a run or a time they did not mention.
+  const srv = await chief.serve();
+  try {
+    await page.setViewportSize({ width: 1400, height: 950 });
+    await page.goto(`${srv.url}/#/runs`);
+    await expect(tid(page, "sidenav")).toBeVisible();
+    await tid(page, "nav-assistant").click();
+    const box = tid(page, "assistant-question");
+    await expect(box).toBeVisible();
+    const refine = tid(page, "assistant-refine");
+    // A ghost glyph and a word, like the panel's other chrome, and nothing to refine when nothing is typed.
+    await expect(refine).toBeDisabled();
+    await expect(refine.locator("svg")).toHaveCount(1);
+    await expect(refine).not.toHaveClass(/border/);
+
+    const rough = `make the daily thing run every morning for the payments people ${fake({ text: "Run the em-daily-operation workflow every weekday at 09:00 for the payments team.", sleep_ms: 300, cost: 0.004 })}`;
+    await box.fill(rough);
+    await expect(refine).toBeEnabled();
+    await refine.click();
+    // In place, and the panel says who rewrote it and offers the way back.
+    await expect(box).toHaveValue("Run the em-daily-operation workflow every weekday at 09:00 for the payments team.");
+    await expect(tid(page, "assistant-refined")).toContainText("Rewritten by claude-code");
+    // The price is hidden with the other dollar figures (task 15.24).
+    await expect(tid(page, "assistant-refined")).not.toContainText("$");
+
+    // What the CLI was asked is the point: the typed text, the rules for a message — not for a step prompt — and no
+    // tools or servers, because refining is not a run.
+    const call = chief.calls().at(-1)!;
+    expect(call.prompt).toContain(`<prompt>\n${rough}\n</prompt>`);
+    expect(call.prompt).toContain("a message a person typed into chief's assistant");
+    expect(call.prompt).toContain("do not invent a workflow name, a run, a time");
+    expect(call.prompt).toContain("Keep every template placeholder exactly as written");
+    expect(call.prompt).not.toContain("prompt of one step of an automated workflow");
+    expect(call.argv.join(" ")).toContain("--disallowedTools");
+    expect((await srv.api("GET", "/api/runs")).body, "refining starts no run").toEqual([]);
+
+    // The way back restores the words exactly, and survives a refresh: it is a draft like everything else typed.
+    await expect.poll(() => page.evaluate(() => (window as any).__chiefDraftWrites)).toBe(0);
+    await page.reload();
+    // The panel's open state is kept across a reload, so clicking the rail item here would *close* it.
+    await expect(tid(page, "assistant-panel")).toBeVisible();
+    await expect(tid(page, "assistant-refined")).toBeVisible();
+    await tid(page, "assistant-refine-undo").click();
+    await expect(tid(page, "assistant-question")).toHaveValue(rough);
+    await expect(tid(page, "assistant-refined")).toHaveCount(0);
+
+    // Refined again and kept: the offer goes, the text stays.
+    await tid(page, "assistant-refine").click();
+    await expect(tid(page, "assistant-refined")).toBeVisible();
+    await tid(page, "assistant-refine-keep").click();
+    await expect(tid(page, "assistant-refined")).toHaveCount(0);
+    await expect(tid(page, "assistant-question")).toHaveValue("Run the em-daily-operation workflow every weekday at 09:00 for the payments team.");
+  } finally {
+    await srv.stop();
+  }
+});

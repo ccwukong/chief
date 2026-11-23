@@ -296,6 +296,13 @@ const REFINE: Record<string, string> = {
   agent: "The text is the prompt of one step of an automated workflow. An agent carries it out unattended: it cannot ask the author anything while it works, and it is given the results of earlier steps automatically.",
   gate: "The text is an instruction for a checkpoint of an automated workflow. It describes, in plain words, what the person running the workflow should be asked at that point; another agent turns it into a form.",
   compensate: "The text is the prompt that undoes what one step of an automated workflow did. An agent carries it out unattended when the run is reverted.",
+  /**
+   * A message typed into chief bot's chat box — a question, or an instruction to answer, build or change a workflow,
+   * or add or change a schedule (asked 2026-11-23: *"my random thoughts or words can be rephrased in a better
+   * agent-friendly prompt"*). The usual rewriting rules do not quite fit: a chat message is read once by an assistant
+   * that acts on it, so what is left implicit is what goes wrong.
+   */
+  question: "The text is a message a person typed into chief's assistant. The assistant reads it on its own and can answer it, build or change a workflow on the canvas, or add or change a schedule — so what the person left implicit has to be written down: which workflow or run, which times, what to do with the answer. Keep it a question if it is a question, and an instruction if it is an instruction.",
 };
 
 /**
@@ -304,7 +311,7 @@ const REFINE: Record<string, string> = {
  */
 export async function refinePrompt(store: Store, v: { text: string; kind?: string; adapter?: string; model?: string }): Promise<{ text: string; adapter: string; cost_usd: number }> {
   const text = String(v.text ?? "").trim();
-  if (!text) throw new EngineError("there is no prompt to refine yet: type what the step should do first");
+  if (!text) throw new EngineError("there is nothing to refine yet: type something first");
   const adapterName = v.adapter || store.getSetting<string>("default-adapter", "claude-code");
   const adapter = getAdapter(store, adapterName);
   const prompt = [
@@ -315,6 +322,14 @@ export async function refinePrompt(store: Store, v: { text: string; kind?: strin
     "- Keep every template placeholder exactly as written, for example {{inputs.x}}, {{nodes.id.output.path}} and {{item}}.",
     "- Fix grammar and spelling, remove repetition, put the goal first, and use short paragraphs or a list where that helps.",
     "- Do not add instructions about the format of the reply (a JSON block, side effects): the orchestrator appends those itself.",
+    // A chat message is not a step prompt: the two things that matter are that a question stays a question, and that
+    // nothing is invented — "make it clearer" must not become "also do these four other things".
+    ...(v.kind === "question"
+      ? [
+          "- Say what the person means, not more: do not invent a workflow name, a run, a time, a file or a requirement they did not mention. If something is genuinely missing, leave it open rather than choosing for them.",
+          "- One message, as short as the meaning allows: this is what the assistant is given, not documentation.",
+        ]
+      : []),
     "- Write in the language of the original.",
     "Reply with the rewritten text only: no introduction, no explanation, no code fence.",
     "",
