@@ -201,7 +201,22 @@ test("E15.19-1 every screenshot the README shows exists and is shown, and the da
   expect(dark.mean, "the dark screenshot's mean luminance").toBeLessThan(110);
   expect(dark.darkShare, "most of the dark screenshot is dark").toBeGreaterThan(0.5);
   // And it is the screen the caption names: a run in the panel over the list, not the full-page run.
-  expect(readFileSync(join(ROOT_DIR, "e2e/tools/take-screenshots.mjs"), "utf8")).toContain('[data-testid="run-panel-body"]');
+  const tool = readFileSync(join(ROOT_DIR, "e2e/tools/take-screenshots.mjs"), "utf8");
+  expect(tool).toContain('[data-testid="run-panel-body"]');
+  /**
+   * **No machine path in a published picture.** The Settings screenshot showed the Claude Code path as
+   * `/Users/<name>/Documents/projects/chief/e2e/fixtures/fake-claude.ts` — the fixture the throw-away chief runs — in the
+   * README and on the landing page (reported 2026-11-23: *"some of the screenshots … have my name as the `Claude Code
+   * Path` value. i want it to be masked"*). Two are asserted here because a case cannot see inside a PNG: the tool masks
+   * every place a path is printed, and it **fails the run** rather than publishing one, so a field added later cannot
+   * slip through. The values themselves were verified in a browser: the set of masked fields is these, and the guard
+   * caught a second leak (the MCP command boxes) the report had not mentioned.
+   */
+  for (const masked of ['[data-testid="setting-${name}-path"]', '[data-testid="mcp-command-line-${name}"]', "[data-testid=\"wf-base-dir\"]"]) {
+    expect(tool, `the tool masks ${masked}`).toContain(masked);
+  }
+  expect(tool, "and refuses to publish a picture that still has one").toContain("would publish a machine path");
+  expect(tool, "over the real home folder").toContain("homedir()");
   // The light picture beside it is the opposite, so the pair shows the theme instead of one page twice.
   const light = pngLuminance(join(ROOT_DIR, "docs/screenshots/runs.png"));
   expect(light.mean, "the run list is the light theme").toBeGreaterThan(200);

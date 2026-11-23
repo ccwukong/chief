@@ -10,11 +10,13 @@
 import { chromium } from "@playwright/test";
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+/** Each agent CLI's binary, so a masked path still reads as one (`~/.local/bin/claude`). */
+const CLI_BIN = { "claude-code": "claude", codex: "codex", cursor: "cursor-agent", antigravity: "agy", opencode: "opencode", hermes: "hermes" };
 const work = resolve(process.argv[2] ?? mkdtempSync(join(tmpdir(), "chief-shots-")));
 const out = join(root, "docs/screenshots");
 const flow = join(work, "flows", "daily-slack");
@@ -101,14 +103,58 @@ try {
 
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 2 });
-  // The folders of this throw-away chief are of no interest in a picture: show a short, typical one.
-  const tidy = () => page.evaluate(() => {
-    const dir = document.querySelector('[data-testid="wf-base-dir"]');
-    if (dir) dir.value = "~/.chief/workspace/daily-slack";
-    const folder = document.querySelector('[data-testid="palette-mcp-folder"]');
-    if (folder) folder.textContent = "in ~/.chief/workspace/daily-slack";
-  });
-  const shot = async (name) => { await tidy(); await page.screenshot({ path: join(out, name) }); console.log("wrote", join("docs/screenshots", name)); };
+  /**
+   * Take a machine out of the picture.
+   *
+   * These images are published — in the README and on the landing page — and a path on the machine that took them
+   * names the person using it. The one that leaked was the **Claude Code path** on Settings: it is filled from what
+   * `doctor` detected, and in this throw-away chief the fake CLIs live inside the checkout, so the field read
+   * `/Users/<name>/Documents/projects/chief/e2e/fixtures/fake-claude.ts` (reported 2026-11-23).
+   *
+   * Two parts, and the second is the one that matters: every place a path is printed gets a plausible generic value,
+   * and then `assertNothingPersonal` **fails the run** if the home folder or the checkout path is still anywhere in
+   * the page. A field added later without masking cannot quietly end up in a published picture.
+   */
+  const tidy = () => page.evaluate((bins) => {
+    const setValue = (sel, value) => { const el = document.querySelector(sel); if (el) el.value = value; };
+    const setText = (sel, value) => { const el = document.querySelector(sel); if (el) el.textContent = value; };
+    // The workflow's folder, and the server list's folder.
+    setValue('[data-testid="wf-base-dir"]', "~/.chief/workspace/daily-slack");
+    setText('[data-testid="palette-mcp-folder"]', "in ~/.chief/workspace/daily-slack");
+    // Each agent CLI's path, as the settings card shows it.
+    for (const [name, bin] of Object.entries(bins)) setValue(`[data-testid="setting-${name}-path"]`, `~/.local/bin/${bin}`);
+    // The "Run a command" boxes on the MCP card begin with the CLI's binary, which is as personal as the path field:
+    // in this throw-away chief it is the fixture inside the checkout. Only the leading binary is replaced; the rest of
+    // the command is the CLI's own words and is the point of the picture.
+    for (const [name, bin] of Object.entries(bins)) {
+      const box = document.querySelector(`[data-testid="mcp-command-line-${name}"]`);
+      if (box && box.value) box.value = box.value.replace(/^\S*\/(\S+)/, `~/.local/bin/${bin}`);
+    }
+    // The workspace field's hint prints the resolved default folder.
+    const hint = document.querySelector('[data-testid="setting-workspace-dir"]')?.closest("label")?.querySelector("span.block");
+    if (hint) hint.textContent = "Base directory for workflows created in the designer. Empty: ~/.chief/workspace";
+  }, CLI_BIN);
+
+  /** No home path, no checkout path, in any field or anywhere in the text. Throws rather than publishing it. */
+  const assertNothingPersonal = () => page.evaluate(([home, checkout]) => {
+    const bad = [];
+    for (const el of document.querySelectorAll("input, textarea")) {
+      const v = String(el.value ?? "");
+      if (v.includes(home) || v.includes(checkout)) bad.push(`${el.dataset.testid ?? el.tagName} = ${v}`);
+    }
+    const text = document.body.innerText;
+    if (text.includes(home)) bad.push("the page text contains the home folder");
+    if (text.includes(checkout)) bad.push("the page text contains the checkout path");
+    return bad;
+  }, [homedir(), root]);
+
+  const shot = async (name) => {
+    await tidy();
+    const bad = await assertNothingPersonal();
+    if (bad.length) throw new Error(`${name} would publish a machine path:\n  ${bad.join("\n  ")}\nMask it in tidy() before taking the picture.`);
+    await page.screenshot({ path: join(out, name) });
+    console.log("wrote", join("docs/screenshots", name));
+  };
 
   await page.goto(`${url}/#/designer/daily-slack`);
   await page.locator('[data-testid="palette"][data-ready="true"]').waitFor();
