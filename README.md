@@ -201,8 +201,13 @@ it knows your workflows, the recent runs and the gates waiting for you ("which r
 "what is waiting for me?"). Also on the command line: `chief runs ask <id> "<question>"`.
 
 It **runs nothing and changes nothing during a run**: it writes workflows and their schedules before a run
-and reads records after one, with no tools and no MCP servers of its own. Every change it makes to a
-workflow is listed under its answer with Undo.
+and reads records after one. It can look at the code too — read and search by default, and optionally the
+CLI's MCP servers, both in Settings › chief bot — because "why is this step failing?" is a question about
+the repository the step runs in. Every change it makes to a workflow is listed under its answer with Undo.
+
+The design — one CLI process per question, what it is given, the blocks it may return, how a long
+conversation is compacted, and what it deliberately does not have — is in
+[docs/chief-bot.md](docs/chief-bot.md).
 
 **A long conversation does not run out of room.** chief does not keep an agent running — each question is
 one CLI process, and a follow-up continues the CLI's session — so the conversation's context belongs to the
