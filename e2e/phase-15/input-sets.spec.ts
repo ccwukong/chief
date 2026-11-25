@@ -274,13 +274,16 @@ test("E15.125-2 a new panel starts clean: no previous set's data, and nothing st
     }
     expect((await srv.api("GET", "/api/input-sets")).body, "opening a new form stores nothing").toEqual([]);
 
-    // 2. Type into a new form, then close it: nothing is stored, and the next new form is empty rather than pre-filled.
+    // 2. Type into a new form, then close it: nothing is stored in the DB, and reopening keeps the draft until saved
+    //    or cleared (15.129).
     await tid(page, "new-run-new").click();
     await tid(page, "new-run-inputs-engineer-input").fill("Half-typed");
     await page.keyboard.press("Escape");
     await expect(tid(page, "input-set-panel")).toHaveCount(0);
     expect((await srv.api("GET", "/api/input-sets")).body).toEqual([]);
     await tid(page, "new-run-new").click();
+    await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("Half-typed");
+    await tid(page, "input-set-clear").click();
     await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("");
     await expect(tid(page, "input-set-name")).toHaveValue("");
     await page.keyboard.press("Escape");
@@ -303,14 +306,15 @@ test("E15.125-2 a new panel starts clean: no previous set's data, and nothing st
     expect(JSON.parse(await tid(page, "new-run-inputs").inputValue()), "empty, not the other workflow's values").toEqual({});
     await expect(tid(page, "new-run-inputs-ticket-input")).toHaveValue("");
 
-    // 4. A panel that was left open arrives back after a refresh with the typing **it** had: the draft rule, which this
-    //    fix must not cost.
+    // 4. A panel that was left open arrives back after a refresh with the typing **it** had: the draft rule, and Clear
+    //    wipes it cleanly so the next open starts empty.
     await tid(page, "new-run-inputs-ticket-input").fill("typing-then-refresh");
+    await expect.poll(() => page.evaluate(() => (window as any).__chiefDraftWrites)).toBe(0);
     await page.reload();
+    await tid(page, "workflow-panel-other").click();
     await tid(page, "new-run-new").click();
     await expect(tid(page, "new-run-inputs-ticket-input")).toHaveValue("typing-then-refresh");
-    // Closing it saves what was typed rather than leaving it to be inherited, and the next one starts clean — empty,
-    // with the workflow's own value only as the hint of what a run would get.
+    await tid(page, "input-set-clear").click();
     await page.keyboard.press("Escape");
     await tid(page, "new-run-new").click();
     await expect(tid(page, "new-run-inputs-ticket-input")).toHaveValue("");
@@ -478,5 +482,79 @@ test("E15.127-1 first launch seeds the starter workflow and sample input data se
   srv = await chief.serve({ env: { CHIEF_NO_SEED: "" } });
   try {
     expect((await srv.api("GET", "/api/workflows")).body).toEqual([]);
+  } finally { await srv.stop(); }
+});
+
+test("E15.129-1 new input data set form keeps its draft across closes until saved or cleared", async ({ chief, page }) => {
+  expect(chief.importWorkflow(REVIEW).code).toBe(0);
+  const srv = await chief.serve();
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`${srv.url}/#/runs`);
+
+    // Open New input data set: starts empty, Clear is disabled.
+    await tid(page, "new-run-new").click();
+    await expect(tid(page, "input-set-panel")).toBeVisible();
+    await expect(tid(page, "input-set-clear")).toBeVisible();
+    await expect(tid(page, "input-set-clear")).toBeDisabled();
+
+    // Fill name and form values; Clear becomes enabled, nothing is stored in DB yet.
+    await tid(page, "input-set-name").fill("Draft review");
+    await tid(page, "new-run-inputs-engineer-input").fill("Ada");
+    await tid(page, "new-run-inputs-hours-input").fill("12");
+    await expect(tid(page, "input-set-clear")).toBeEnabled();
+    await expect.poll(() => page.evaluate(() => (window as any).__chiefDraftWrites)).toBe(0);
+
+    // 1. Close via Escape, ×, and backdrop: every reopen restores name + form + JSON, and DB stays empty.
+    await page.keyboard.press("Escape");
+    await expect(tid(page, "input-set-panel")).toHaveCount(0);
+    expect((await srv.api("GET", "/api/input-sets")).body).toEqual([]);
+
+    await tid(page, "new-run-new").click();
+    await expect(tid(page, "input-set-name")).toHaveValue("Draft review");
+    await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("Ada");
+    await expect(tid(page, "new-run-inputs-hours-input")).toHaveValue("12");
+    expect(JSON.parse(await tid(page, "new-run-inputs").inputValue())).toEqual({ engineer: "Ada", hours: 12 });
+
+    await tid(page, "input-set-close").click();
+    await expect(tid(page, "input-set-panel")).toHaveCount(0);
+    await tid(page, "new-run-new").click();
+    await expect(tid(page, "input-set-name")).toHaveValue("Draft review");
+    await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("Ada");
+
+    await tid(page, "input-set-backdrop").click({ position: { x: 20, y: 20 } });
+    await expect(tid(page, "input-set-panel")).toHaveCount(0);
+    await page.reload();
+    await tid(page, "new-run-new").click();
+    await expect(tid(page, "input-set-name")).toHaveValue("Draft review");
+    await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("Ada");
+    await expect(tid(page, "new-run-inputs-hours-input")).toHaveValue("12");
+
+    // 2. Clear wipes name, form fields, JSON, and draft; stays empty after close & reopen.
+    await tid(page, "input-set-clear").click();
+    await expect(tid(page, "input-set-name")).toHaveValue("");
+    await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("");
+    await expect(tid(page, "new-run-inputs-hours-input")).toHaveValue("");
+    expect(JSON.parse(await tid(page, "new-run-inputs").inputValue())).toEqual({});
+    await expect(tid(page, "input-set-clear")).toBeDisabled();
+    await expect.poll(() => page.evaluate(() => (window as any).__chiefDraftWrites)).toBe(0);
+    await page.keyboard.press("Escape");
+    await tid(page, "new-run-new").click();
+    await expect(tid(page, "input-set-name")).toHaveValue("");
+    await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("");
+
+    // 3. Save data set creates the DB record and clears the new-form draft so the next New panel opens clean.
+    await tid(page, "input-set-name").fill("Saved review");
+    await tid(page, "new-run-inputs-engineer-input").fill("Grace");
+    await tid(page, "input-set-save").click();
+    await expect(tid(page, "input-set-start")).toBeVisible();
+    await expect(tid(page, "input-set-clear")).toHaveCount(0);
+    expect((await srv.api("GET", "/api/input-sets")).body).toHaveLength(1);
+
+    await page.keyboard.press("Escape");
+    await tid(page, "new-run-new").click();
+    await expect(tid(page, "input-set-name")).toHaveValue("");
+    await expect(tid(page, "new-run-inputs-engineer-input")).toHaveValue("");
+    expect(JSON.parse(await tid(page, "new-run-inputs").inputValue())).toEqual({});
   } finally { await srv.stop(); }
 });

@@ -173,10 +173,11 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
   const initialWorkflow = existing?.workflow || defaultWorkflow || workflows[0]?.name || "";
   const [workflow, setWorkflow] = useState(initialWorkflow);
   /**
-   * The draft is per set, and a **new** one is per workflow: a draft left behind for one workflow must never fill a
-   * panel opened for another, which is what "i still see the previous data already filled the form" was (2026-11-25).
+   * The draft is per set, and a **new** one is per workflow: a draft left behind for one workflow never fills a panel
+   * opened for another. Once a new set is saved, `draftBase` moves to `input-set:<id>` so the `new:<workflow>` draft
+   * stays clear for the next new form (15.129).
    */
-  const draftBase = `input-set:${id ?? `new:${initialWorkflow}`}`;
+  const draftBase = `input-set:${saved?.id ?? id ?? `new:${workflow}`}`;
   const [name, setName] = useState(() => readDraft<string>(`${draftBase}:name`) ?? existing?.name ?? "");
   /** The values as text: one value, two views, exactly as a run's inputs are (15.120). */
   /** The values, empty to begin with: a new set holds `{}` and the fields show nothing. */
@@ -189,29 +190,28 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   /**
-   * Close: **a pending change is written before the panel goes**, rather than dropped with the debounce. Typing a name
-   * and closing within the half-second used to save nothing and leave the draft behind, so the next new panel opened
-   * pre-filled with it (reported 2026-11-25: *"why when i create a new data set, i still see the previous data already
-   * filled the form"*). Now the write happens first, which also clears the draft — nothing typed is lost, and nothing
-   * stale is inherited.
+   * Close:
+   * - For an **existing** set, flush any pending edit before the panel goes and remove its edit draft.
+   * - For a **new** (unsaved) form, keep the draft in SQLite so closing halfway through never loses what was typed;
+   *   it stays until **Save data set** creates the record or **Clear** wipes the form (15.129).
    */
   const began = useRef(false);
   const close = async () => {
-    if (saved && !began.current && changed && parsed) {
-      began.current = true;
-      try {
-        const out = await write(parsed);
-        onSaved(out);
-      } catch { /* the error is on screen if it can be; the panel still closes */ }
+    if (saved) {
+      if (!began.current && changed && parsed) {
+        began.current = true;
+        try {
+          const out = await write(parsed);
+          onSaved(out);
+        } catch { /* the error is on screen if it can be; the panel still closes */ }
+      }
+      removeDraft(`${draftBase}:name`); removeDraft(`${draftBase}:values`);
     }
-    // A closed panel has nothing left to restore — and a draft left behind is what filled the next new panel.
-    removeDraft(`${draftBase}:name`); removeDraft(`${draftBase}:values`);
     onClose();
   };
   /**
-   * The same flush when the panel goes **without** being closed — navigating to another page. A draft is there to
-   * survive a **refresh** (a refresh runs no cleanup, so it still does), not to be inherited by the next new panel, and
-   * an abandoned panel that has content is a set, so it is written rather than left in a draft.
+   * The same flush when the panel unmounts without being closed (e.g. navigating to another page). An existing set
+   * flushes its pending edit; a new form keeps its draft until saved or cleared (15.129).
    */
   const flush = useRef<() => void>(() => {});
   flush.current = () => {
@@ -238,10 +238,37 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
       .catch(() => live && setFields([]));
     return () => { live = false; };
   }, [workflow]);
-  // The workflow list can arrive after the panel opens, so a new set with none takes the first one then.
-  useEffect(() => { if (!saved && !workflow && workflows.length) setWorkflow(workflows[0].name); }, [saved, workflow, workflows]);
-  useEffect(() => { if (name) writeDraft(`${draftBase}:name`, name); else removeDraft(`${draftBase}:name`); }, [draftBase, name]);
-  useEffect(() => { writeDraft(`${draftBase}:values`, text); }, [draftBase, text]);
+  // The workflow list can arrive after the panel opens, so a new set with none takes the first one and hydrates its draft.
+  useEffect(() => {
+    if (!saved && !workflow && workflows.length) {
+      const next = workflows[0].name;
+      setWorkflow(next);
+      const nextBase = `input-set:new:${next}`;
+      if (!name) setName(readDraft<string>(`${nextBase}:name`) ?? "");
+      if (text.trim() === "" || text.trim() === "{}") setText(readDraft<string>(`${nextBase}:values`) ?? "{}");
+    }
+  }, [saved, workflow, workflows, name, text]);
+  useEffect(() => {
+    if (creating && !workflow) return;
+    if (creating) {
+      if (name) writeDraft(`${draftBase}:name`, name); else removeDraft(`${draftBase}:name`);
+    } else if (name.trim() !== stored.current.name) {
+      writeDraft(`${draftBase}:name`, name);
+    } else {
+      removeDraft(`${draftBase}:name`);
+    }
+  }, [draftBase, name, creating, workflow]);
+  useEffect(() => {
+    if (creating && !workflow) return;
+    if (creating) {
+      if (text.trim() === "" || text.trim() === "{}") removeDraft(`${draftBase}:values`);
+      else writeDraft(`${draftBase}:values`, text);
+    } else {
+      const p = parseInputs(text);
+      if (p !== null && JSON.stringify(p) === stored.current.values) removeDraft(`${draftBase}:values`);
+      else writeDraft(`${draftBase}:values`, text);
+    }
+  }, [draftBase, text, creating, workflow]);
 
   const parsed = parseInputs(text);
   const missing = missingRequired(fields, parsed ?? {});
@@ -316,6 +343,16 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
     } catch (e: any) { setState("error"); setError(e.message); }
   };
 
+  /** Clear the unsaved new form: empties the name, all form/JSON values, and its SQLite draft (15.129). */
+  const hasContent = name.length > 0 || (parsed === null ? text.trim().length > 0 : Object.keys(parsed).length > 0);
+  const clearForm = () => {
+    setName("");
+    setText("{}");
+    setError(null);
+    removeDraft(`${draftBase}:name`);
+    removeDraft(`${draftBase}:values`);
+  };
+
   return (
     <>
       <div data-testid="input-set-backdrop" className="fixed inset-0 z-40 bg-black/20" onClick={() => void close()} />
@@ -333,7 +370,7 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
               : blank.length ? `Saved · still empty: ${blank.join(", ")}`
               : "Saved"}
           </span>
-          <Button variant="ghost" className="h-7 w-7 px-0 text-slate-500" type="button" data-testid="input-set-close" aria-label="Close" title="Close (Escape)" onClick={onClose}>
+          <Button variant="ghost" className="h-7 w-7 px-0 text-slate-500" type="button" data-testid="input-set-close" aria-label="Close" title="Close (Escape)" onClick={() => void close()}>
             <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </Button>
         </div>
@@ -347,7 +384,16 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
           <label className="mb-3 block min-w-0">
             <span className="label">Workflow</span>
             <Select className="w-full" data-testid="input-set-workflow" value={workflow} disabled={!creating}
-              onChange={(e) => { setWorkflow(e.target.value); }}>
+              onChange={(e) => {
+                const next = e.target.value;
+                setWorkflow(next);
+                if (creating) {
+                  const nextBase = `input-set:new:${next}`;
+                  setName(readDraft<string>(`${nextBase}:name`) ?? "");
+                  setText(readDraft<string>(`${nextBase}:values`) ?? "{}");
+                  setError(null);
+                }
+              }}>
               {workflows.map((w) => <option key={w.name} value={w.name}>{w.name}</option>)}
             </Select>
             {!creating && <span className="mt-1 block text-xs text-slate-500">It belongs to the workflow it was prepared for.</span>}
@@ -368,22 +414,26 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
           <InputFormWithJson fields={fields} text={text} setText={setText} stem="new-run-inputs" />
         </div>
         {/*
-          * **One action, and which one depends on what this panel is.** A new set is a form that has not been stored, so its
-          * action is Save; an existing set is already a row, so its action is Start run and its edits save themselves.
-          * Asked 2026-11-25: *"add the explict Save data set button in the panel if it's a new form, otherwise it should be
-          * `Start run` if it opened by clicking the item on the data set listing"*.
+          * **One primary action, and which one depends on what this panel is.** A new set is a form that has not been
+          * stored, so its primary action is Save data set (with Clear beside it to wipe the draft, 15.129); an existing
+          * set is already a row, so its action is Start run and its edits save themselves.
           */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-slate-200 px-4 py-2.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-200 px-4 py-2.5">
           {creating ? (
-            <AsyncButton data-testid="input-set-save" variant="default" busy={state === "saving"} disabled={!parsed}
-              title={parsed ? undefined : "The values are not a JSON object; fix them in the JSON view"}
-              onClick={create}>Save data set</AsyncButton>
+            <>
+              <AsyncButton data-testid="input-set-save" variant="default" busy={state === "saving"} disabled={!parsed}
+                title={parsed ? undefined : "The values are not a JSON object; fix them in the JSON view"}
+                onClick={create}>Save data set</AsyncButton>
+              <Button data-testid="input-set-clear" variant="outline" type="button" disabled={!hasContent}
+                title="Clear the name and all form/JSON values"
+                onClick={clearForm}>Clear</Button>
+            </>
           ) : (
             <AsyncButton data-testid="input-set-start" variant="default" busy={state === "saving"} disabled={!parsed || cannotStart || !!blocked}
               title={blocked?.why ?? (missing.length ? `Still needed: ${missing.map((f) => f.label).join(", ")}` : blank.length ? `Still empty: ${blank.join(", ")}` : undefined)}
               onClick={start}>Start run</AsyncButton>
           )}
-          <span className="text-xs text-slate-500" data-testid="input-set-hint">
+          <span className="min-w-0 text-xs text-slate-500" data-testid="input-set-hint">
             {creating ? "Not saved yet — nothing is stored until you save it" : blocked ? blocked.why : "Every change is saved as you make it"}
           </span>
         </div>
