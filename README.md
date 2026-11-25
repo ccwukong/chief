@@ -4,7 +4,7 @@
 
 # chief
 
-**Automate any task with your own AI agents.**
+**Automate any workflow with your own AI agents.**
 
 Stop repeating the same prompts every day. **chief** turns the AI agent subscriptions you already
 pay for — **Claude Code**, **Codex**, **Cursor**, **Antigravity**, **OpenCode**, or **Hermes** —
