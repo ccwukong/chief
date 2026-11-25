@@ -63,7 +63,7 @@ needs nothing in the engine.
 - [chief bot](#chief-bot)
 - [How a workflow is built](#how-a-workflow-is-built)
 - [The web UI](#the-web-ui)
-- [The command line](#the-command-line)
+- [The command line (in progress)](#the-command-line-in-progress)
 - [Where chief keeps things](#where-chief-keeps-things)
 - [MCP servers](#mcp-servers)
 - [Troubleshooting a run](#troubleshooting-a-run)
@@ -362,7 +362,7 @@ While the server runs it prints a log in its terminal: requests that change some
 runs and steps as they start, finish or fail, gates waiting for you, and each time it reads the
 MCP servers. `CHIEF_LOG=debug chief serve` also shows every request the page makes.
 
-## The command line
+## The command line (in progress)
 
 The examples below use `chief` as an installed command (`npm run install:cli`, see **Quick start**).
 From a checkout without it, every one works as `npm run chief <command>` — `npm run chief runs show 1`.
