@@ -4,8 +4,12 @@
 
 # chief
 
-chief runs workflows made of AI agents on your own machine, and stops to ask you before
-anything you want to decide yourself.
+**Automate any task with your own AI agents.**
+
+Stop repeating the same prompts every day. **chief** turns the AI agent subscriptions you already
+pay for — **Claude Code**, **Codex**, **Cursor**, **Antigravity**, **OpenCode**, or **Hermes** —
+into repeatable, scheduled workflows that run locally on your machine and pause at human-in-the-loop
+gates for your approval before acting. No cloud account, no extra API keys, no telemetry.
 
 <p align="center">
   <sub><b>WORKS WITH</b></sub><br>
@@ -20,12 +24,24 @@ anything you want to decide yourself.
 The marks above are the vendors' own, shown to say which CLIs chief drives — see
 [docs/logos](docs/logos/readme.md) for where each came from, and why Codex and Antigravity have none.
 
-You draw a workflow as a small graph of steps: "read my Slack and list what I need to do", "ask
-me which of these to handle", "do them", "write a report". chief runs the steps with the agent CLI
-you already use (Claude Code, Antigravity or OpenCode; Codex, Cursor and Hermes experimentally), waits at the points where you want
-a say, records everything that was sent and received, tracks what each step cost, and can undo
-what a run changed. A step is whatever agent CLI you point it at: the six adapters today are coding
-agents plus Hermes Agent, and another adapter needs nothing in the engine.
+![chief demo: describe a workflow to chief bot, run it locally, and answer the Human-in-the-Loop Gate](docs/screenshots/chief-demo.gif)
+
+### What you can automate
+
+Anything you normally do in a multi-step back-and-forth with an AI agent can be wired into a
+workflow, run on a schedule, and paused for your say before anything leaves your machine:
+
+- **Daily Slack & inbox triage** — Every morning at 9am, scan unread Slack threads or emails, pause at a gate so you pick which ones deserve a reply, then draft responses ready to send.
+- **Release notes & PR summaries** — Collect merged pull requests since the last tag, run local checks, draft the changelog, and ask for your sign-off before publishing.
+- **Multi-agent research & specs** — Mix and match subscriptions in one pipeline: let one agent gather codebase context or docs, another draft a spec or weekly brief, and review before saving.
+- **Issue triage & bug investigation** — Pull new GitHub or Jira tickets on a schedule, inspect each one in parallel against your local repo, and queue proposed fixes for your approval.
+
+Describe the workflow to **chief bot** or draw it as a graph of steps. chief runs each step with the
+agent CLI you already use (Claude Code, Antigravity or OpenCode; Codex, Cursor and Hermes
+experimentally), waits at the points where you want a say, records everything that was sent and
+received, tracks what each step cost, and can undo what a run changed. A step is whatever agent CLI
+you point it at: the six adapters today are coding agents plus Hermes Agent, and another adapter
+needs nothing in the engine.
 
 - **chief owns** the workflow, the run, a full record of every run, the questions to you (gates),
   token and cost accounting, and pause, resume and revert.
