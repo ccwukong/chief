@@ -81,6 +81,9 @@ function visible(b: Rectangle): boolean {
 function createWindow() {
   win = new BrowserWindow({
     width: 1360, height: 900, minWidth: 480, minHeight: 400, show: false, title: "chief", backgroundColor: nativeTheme.shouldUseDarkColors ? PAGE_DARK : PAGE_LIGHT,
+    // Frameless inset titlebar on macOS (task 15.130): removes the separate native titlebar strip so the app
+    // surface extends to the top edge, with traffic lights centred inside the 72 px left rail.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 10, y: 12 } } : {}),
     // The page is a plain web page: no Node, isolated context, sandboxed renderer.
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
   });
@@ -192,6 +195,7 @@ async function boot(): Promise<boolean> {
     // The development loop owns the server; the window is only the page, so nothing is started or waited for.
     log.note(`development mode: showing ${devUrl} and starting no server of its own`);
     show(homeUrl());
+    await applyWindowTheme();
     return true;
   }
   sidecar = newSidecar();
@@ -286,8 +290,8 @@ async function confirmAndQuit(): Promise<void> {
   }
 }
 /**
- * Keep the window's own background in the theme the person chose (Settings › Appearance). Only the
- * moment before the page paints can show it; the page itself is themed by the web UI.
+ * Keep Electron's native chrome (`nativeTheme.themeSource`) and window background in sync with the
+ * theme the person chose in Settings › Appearance (tasks 15.8, 15.130).
  */
 async function applyWindowTheme(): Promise<void> {
   const base = devUrl || origin();
@@ -297,8 +301,25 @@ async function applyWindowTheme(): Promise<void> {
     const res = await fetch(`${base}/api/settings`, { signal: AbortSignal.timeout(2000) });
     if (res.ok) theme = String(((await res.json()) as Record<string, unknown>).theme ?? "system");
   } catch { /* the server is not up yet: the system's setting is the guess */ }
-  const dark = theme === "dark" || (theme === "system" && nativeTheme.shouldUseDarkColors);
+  const source = theme === "dark" || theme === "light" || theme === "system" ? theme : "system";
+  nativeTheme.themeSource = source;
+  const dark = source === "dark" || (source === "system" && nativeTheme.shouldUseDarkColors);
   win.setBackgroundColor(dark ? PAGE_DARK : PAGE_LIGHT);
+}
+/** Re-sync the window theme whenever Settings › Appearance writes `/api/settings` or macOS flips appearance. */
+function watchThemeChanges() {
+  session.defaultSession.webRequest.onCompleted(
+    { urls: ["http://127.0.0.1:*/api/settings*", "http://localhost:*/api/settings*"] },
+    (details) => {
+      if (details.method === "PUT" || details.method === "PATCH") void applyWindowTheme();
+    },
+  );
+  nativeTheme.on("updated", () => {
+    if (!win || win.isDestroyed()) return;
+    if (nativeTheme.themeSource === "system") {
+      win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAGE_DARK : PAGE_LIGHT);
+    }
+  });
 }
 async function restartServer() {
   if (restarting) return;
@@ -501,6 +522,7 @@ if (!app.requestSingleInstanceLock()) {
     log.note(`chief ${app.getVersion()} starting (Electron ${process.versions.electron}, Node ${process.versions.node}); state in ${root}`);
     buildMenu();
     watchDownloads();
+    watchThemeChanges();
     createWindow();
     if (!devUrl) {
       // In a development run there is no sidecar to hand an environment to.

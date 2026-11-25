@@ -8,6 +8,15 @@ landing page and the release notes take it from the same place.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-25
+
+### Changed
+
+- **Frameless macOS titlebar (`hiddenInset`) and live theme sync.** Removed the separate native macOS
+  titlebar strip so the app extends flush to the top edge with traffic lights centred inside the 72 px
+  left rail, draggable top header/rail strips, and live `nativeTheme` syncing whenever the theme is
+  changed in **Settings → Appearance**.
+
 ## [0.4.0] — 2026-11-25
 
 ### Added

@@ -526,3 +526,31 @@ button[aria-busy="true"] { cursor: progress; opacity: 1; }
 ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color-slate-600) 70%, transparent); background-clip: content-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
+/*
+ * Frameless macOS desktop titlebar (`titleBarStyle: "hiddenInset"`, task 15.130).
+ * Applied only inside Electron on macOS (`<html data-platform="desktop-mac">`), so a regular browser
+ * keeps its exact layout. Reserves space for the traffic lights centred in the 72 px left rail (or at
+ * the left of the narrow mobile bar) and turns the top header strip into a draggable window region while
+ * keeping every interactive control clickable.
+ */
+:root[data-platform="desktop-mac"] [data-testid="app-header"],
+:root[data-platform="desktop-mac"] [data-testid="mobile-bar"],
+:root[data-platform="desktop-mac"] [data-testid="sidenav"] > div:first-child {
+  -webkit-app-region: drag;
+}
+:root[data-platform="desktop-mac"] [data-testid="app-header"] :is(button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="tab"], [role="combobox"], [role="switch"]),
+:root[data-platform="desktop-mac"] [data-testid="mobile-bar"] :is(button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="tab"], [role="combobox"], [role="switch"]),
+:root[data-platform="desktop-mac"] [data-testid="sidenav"] > div:first-child :is(button, a) {
+  -webkit-app-region: no-drag;
+}
+@media (min-width: 768px) {
+  :root[data-platform="desktop-mac"] [data-testid="sidenav"] {
+    padding-top: 2.25rem;
+  }
+}
+@media (max-width: 767px) {
+  :root[data-platform="desktop-mac"] [data-testid="mobile-bar"] {
+    padding-left: 4.75rem;
+  }
+}
+

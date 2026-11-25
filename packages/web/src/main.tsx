@@ -5,6 +5,12 @@ import "./styles.css";
 import { loadDrafts } from "./ui";
 import { applyAppearance, isBaseColor, isTextScale, isTheme } from "./theme";
 
+// Mark Electron on macOS so styles.css reserves room for the inset traffic lights and enables window dragging
+// without altering the layout when opened in a regular browser (task 15.130).
+if (/\bElectron\//.test(navigator.userAgent) && /Mac/i.test(navigator.userAgent)) {
+  document.documentElement.dataset.platform = "desktop-mac";
+}
+
 // Drafts and the appearance are read before anything renders: every field starts with its draft, and
 // the window is already in its theme (no white flash in a dark one).
 Promise.all([

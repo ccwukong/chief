@@ -917,3 +917,64 @@ test("E15.86-1 the validation marks and the link are the theme's own, in both th
     await srv.stop();
   }
 });
+
+test("E15.130-1 frameless macOS desktop titlebar (hiddenInset) and live nativeTheme sync", async ({ chief, page }) => {
+  // 1. Desktop main process contract: hiddenInset on darwin + nativeTheme.themeSource synced on boot and live on /api/settings writes.
+  const mainTs = readFileSync(join(ROOT_DIR, "packages/desktop/src/main.ts"), "utf8");
+  expect(mainTs).toContain('titleBarStyle: "hiddenInset"');
+  expect(mainTs).toContain("trafficLightPosition:");
+  expect(mainTs).toContain("nativeTheme.themeSource = source");
+  expect(mainTs).toContain("watchThemeChanges()");
+  expect(mainTs).toContain("/api/settings*");
+
+  // 2. Web UI contract: desktop-mac platform attribute adds traffic-light inset and drag regions without affecting browser mode.
+  const srv = await chief.serve();
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(srv.url);
+    await expect(tid(page, "sidenav")).toBeVisible();
+
+    // Regular browser: no desktop-mac platform tag and no extra top padding on the rail.
+    const browserState = await page.evaluate(() => ({
+      platform: document.documentElement.dataset.platform ?? null,
+      railPadTop: parseFloat(getComputedStyle(document.querySelector('[data-testid="sidenav"]')!).paddingTop),
+    }));
+    expect(browserState.platform).toBeNull();
+    expect(browserState.railPadTop).toBe(0);
+
+    // Simulated Electron on macOS: top inset on the 72 px rail, draggable app-header with no-drag controls.
+    await page.evaluate(() => { document.documentElement.dataset.platform = "desktop-mac"; });
+    const macWide = await page.evaluate(() => {
+      const rail = document.querySelector('[data-testid="sidenav"]')!;
+      const header = document.querySelector('[data-testid="app-header"]')!;
+      const bell = document.querySelector('[data-testid="gates-badge"]')!;
+      return {
+        railPadTop: parseFloat(getComputedStyle(rail).paddingTop),
+        headerDrag: getComputedStyle(header).getPropertyValue("-webkit-app-region").trim(),
+        bellDrag: getComputedStyle(bell).getPropertyValue("-webkit-app-region").trim(),
+      };
+    });
+    expect(macWide.railPadTop).toBeGreaterThanOrEqual(32);
+    expect(macWide.headerDrag).toBe("drag");
+    expect(macWide.bellDrag).toBe("no-drag");
+
+    // Narrow viewport (375 px): mobile bar reserves space for the traffic lights and never scrolls sideways.
+    await page.setViewportSize({ width: 375, height: 700 });
+    const macNarrow = await page.evaluate(() => {
+      const bar = document.querySelector('[data-testid="mobile-bar"]')!;
+      const menu = document.querySelector('[data-testid="nav-menu"]')!;
+      return {
+        barPadLeft: parseFloat(getComputedStyle(bar).paddingLeft),
+        barDrag: getComputedStyle(bar).getPropertyValue("-webkit-app-region").trim(),
+        menuDrag: getComputedStyle(menu).getPropertyValue("-webkit-app-region").trim(),
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+    expect(macNarrow.barPadLeft).toBeGreaterThanOrEqual(70);
+    expect(macNarrow.barDrag).toBe("drag");
+    expect(macNarrow.menuDrag).toBe("no-drag");
+    expect(macNarrow.overflow).toBeLessThanOrEqual(0);
+  } finally {
+    await srv.stop();
+  }
+});
