@@ -29,4 +29,7 @@ export const migrations: { id: number; name: string; sql: string }[] = [
   { id: 8, name: "008-workflow-archive", sql: sql("008-workflow-archive.sql") },
   { id: 9, name: "009-assistant-memory", sql: sql("009-assistant-memory.sql") },
   { id: 10, name: "010-run-start-from", sql: sql("010-run-start-from.sql") },
+  { id: 11, name: "011-input-sets", sql: sql("011-input-sets.sql") },
+  { id: 12, name: "012-collections", sql: sql("012-collections.sql") },
+  { id: 13, name: "013-input-sets", sql: sql("013-input-sets.sql") },
 ];

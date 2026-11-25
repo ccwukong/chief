@@ -52,18 +52,28 @@ test("E15.105-1 WHEN and INPUTS are editable in place, and a refused value is no
     await expect(cron).toHaveValue("30 6 * * *");
     expect((await srv.api("GET", "/api/schedules")).body[0].cron, "Escape saved nothing").toBe("30 6 * * *");
 
-    // Inputs are a field of JSON, written the same way.
-    const inputs = tid(page, "schedule-inputs-1");
-    await expect(inputs).toHaveValue('{"team":"payments"}');
-    await inputs.fill('{"team":"platform"}');
-    await inputs.blur();
+    // Inputs are the same form the run card asks with (15.121), opened in the row: the fields save themselves.
+    const inputs = tid(page, "schedule-inputs-summary-1");
+    await expect(inputs).toHaveText("team: payments");
+    await inputs.click();
+    const field = tid(page, "schedule-inputs-1-team-input");
+    await expect(field).toHaveValue("payments");
+    await field.fill("platform");
     await expect.poll(async () => (await srv.api("GET", "/api/schedules")).body[0].inputs).toEqual({ team: "platform" });
-    // The workflow needs `team`, so an input the run would be refused without cannot be saved away.
-    await inputs.fill('{"other":"x"}');
-    await inputs.blur();
+    // The workflow needs `team`, so an input the run would be refused without cannot be saved away: it is emptied in
+    // the JSON view, and the server's refusal is shown under the form while what is stored stays as it was.
+    await tid(page, "schedule-inputs-1-view-json").click();
+    const json = tid(page, "schedule-inputs-1");
+    await json.fill('{"other":"x"}');
     await expect(tid(page, "schedule-inputs-error-1")).toContainText(/team/i);
     await expect.poll(async () => (await srv.api("GET", "/api/schedules")).body[0].inputs, "the refused value is not kept").toEqual({ team: "platform" });
-    await expect(inputs, "and the field shows what is stored").toHaveValue('{"team":"platform"}');
+    // Invalid JSON never reaches the server, and says why in the view it is in.
+    await json.fill('{"team":');
+    await expect(tid(page, "schedule-inputs-1-problem")).toBeVisible();
+    await expect.poll(async () => (await srv.api("GET", "/api/schedules")).body[0].inputs).toEqual({ team: "platform" });
+    await json.fill('{"team":"payments"}');
+    await tid(page, "schedule-inputs-done-1").click();
+    await expect(tid(page, "schedule-inputs-summary-1")).toHaveText("team: payments");
 
     // An expression that cannot work: refused by the server, with its reason under the field, and the stored one put back.
     await cron.fill("not a cron");
@@ -71,12 +81,6 @@ test("E15.105-1 WHEN and INPUTS are editable in place, and a refused value is no
     await expect(tid(page, "schedule-cron-error-1")).toBeVisible();
     await expect(cron).toHaveValue("30 6 * * *");
     expect((await srv.api("GET", "/api/schedules")).body[0].cron).toBe("30 6 * * *");
-
-    // Invalid JSON never reaches the server, and says so.
-    await inputs.fill('{"team":');
-    await inputs.blur();
-    await expect(tid(page, "schedule-inputs-error-1")).toContainText("Not valid JSON");
-    await expect(inputs).toHaveValue('{"team":"platform"}');
   } finally {
     await srv.stop();
   }

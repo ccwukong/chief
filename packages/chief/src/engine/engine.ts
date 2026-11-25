@@ -11,7 +11,7 @@ import type { Workflow } from "../workflow/schema.ts";
 import { buildScope, event, getRun, now, type Ctx } from "./context.ts";
 import { defaultAdapter, execNode, widenedScripts } from "./runners.ts";
 import { mkdirSync } from "node:fs";
-import { mergeInputs, missingInputs, missingInputsMessage } from "../workflow/inputs.ts";
+import { mergeInputs, missingInputs, missingInputsMessage, missingRequired, requiredFieldsMessage } from "../workflow/inputs.ts";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -58,7 +58,7 @@ export const describeWidening = (sb: any) =>
   [sb?.network ? "network" : null, sb?.write?.length ? `write: ${sb.write.join(", ")}` : null, sb?.env?.length ? `env: ${sb.env.join(", ")}` : null].filter(Boolean).join("; ");
 
 /** Create a run. The caller then calls `driveRun`. */
-export function startRun(store: Store, workflowName: string, inputs: Record<string, unknown> = {}, budget: { "warn-usd"?: number; "max-usd"?: number } | null = null, parentRunId: number | null = null, startFrom: string | null = null): RunRow {
+export function startRun(store: Store, workflowName: string, inputs: Record<string, unknown> = {}, budget: { "warn-usd"?: number; "max-usd"?: number } | null = null, parentRunId: number | null = null, startFrom: string | null = null, fromInputSet: { id: number; name: string } | null = null): RunRow {
   const wf = store.getWorkflow(workflowName);
   if (!wf) throw new EngineError(`workflow "${workflowName}" not found`);
   // One place, so every way in is covered: the API, `chief run`, a rerun and a schedule. A schedule of an archived
@@ -66,14 +66,16 @@ export function startRun(store: Store, workflowName: string, inputs: Record<stri
   if (wf.archived_at) throw new EngineError(`workflow "${wf.name}" is archived. Unarchive it to run it.`);
   const pre = preflight(store, wf.definition, wf.base_dir ?? process.cwd(), wf.id);
   if (pre.errors.length) throw new EngineError(`cannot run "${wf.name}":\n- ${pre.errors.join("\n- ")}`);
-  // The inputs the workflow refers to must all have a value before anything starts.
+  // The inputs the workflow refers to must all have a value before anything starts, and so must the fields it declares as required (15.119).
   const merged = mergeInputs(wf.definition.inputs, inputs);
+  const required = missingRequired(wf.definition, merged);
+  if (required.length) throw new EngineError(requiredFieldsMessage(`run "${wf.name}"`, required));
   const missing = missingInputs(wf.definition, merged);
   if (missing.length) throw new EngineError(missingInputsMessage(`run "${wf.name}"`, missing, merged));
   // The working directory is created when a run first needs it (the designer does not create it while a path is being typed).
   if (wf.base_dir) { try { mkdirSync(wf.base_dir, { recursive: true }); } catch { /* a node that needs it reports the problem */ } }
-  const run = store.createRun(wf, inputs, budget && Object.keys(budget).length ? budget : null, parentRunId, startFrom);
-  store.addEvent(run.id, "run_created", { workflow: wf.name, version: wf.version, inputs });
+  const run = store.createRun(wf, inputs, budget && Object.keys(budget).length ? budget : null, parentRunId, startFrom, fromInputSet);
+  store.addEvent(run.id, "run_created", { workflow: wf.name, version: wf.version, inputs, ...(fromInputSet ? { input_set_id: fromInputSet.id, input_set_name: fromInputSet.name } : {}) });
   store.addMessage(run.id, { direction: "user", kind: "run_input", content: JSON.stringify(merged, null, 2), meta: { workflow: wf.name, version: wf.version, budget } });
   return run;
 }

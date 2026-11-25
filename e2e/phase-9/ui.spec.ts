@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { expect, fake, FAKE_ANTIGRAVITY, FAKE_CODEX, FAKE_CURSOR, FAKE_OPENCODE, ROOMY_LAYOUT_KEYS, ROOT_DIR, showStep, test as base, type Server, roomyLayout } from "../helpers";
+import { expect, fake, FAKE_ANTIGRAVITY, FAKE_CODEX, FAKE_CURSOR, FAKE_OPENCODE, ROOMY_LAYOUT_KEYS, ROOT_DIR, showStep, test as base, type Server, roomyLayout, openInputSetPanel, gotoRuns } from "../helpers";
 
 const test = base.extend<{ boot: (opts?: { env?: Record<string, string>; compact?: boolean }) => Promise<Server> }>({
   boot: async ({ chief }, use) => {
@@ -112,10 +112,10 @@ edges: [plan -> broken]
   await chief.until(async () => (await srv.api("GET", "/api/runs/1")).body.run.status === "failed");
   const total = (await srv.api("GET", "/api/runs/1/transcript")).body.length;
 
-  // Runs can be listed per workflow.
-  await page.goto(srv.url + "/#/runs");
+  // Runs can be listed per workflow: the list is the page's second tab, and the workflow column filters it (15.125).
+  await gotoRuns(page, srv.url);
   await expect(tid(page, "run-row-2")).toBeVisible();
-  await tid(page, "runs-filter").selectOption("replayed");
+  await tid(page, "workflow-panel-replayed").click();
   await expect(tid(page, "run-row-2")).toHaveCount(0);
   await expect(tid(page, "run-row-1")).toBeVisible();
   await tid(page, "run-row-1").click();
@@ -284,29 +284,38 @@ edges: [pick -> ok, ok -> fb, fb -> end]
   expect((await drafts(page, srv)).filter((k) => k.startsWith("gate:"))).toEqual([]);
 });
 
-test("E9.3-3 new-run inputs, settings and import text survive a refresh", async ({ chief, boot, page }) => {
+test("E9.3-3 a collection being prepared, settings and import text survive a refresh", async ({ chief, boot, page }) => {
   chief.importWorkflow("name: alpha\nnodes:\n  - { id: a, type: agent, prompt: 'hi {{inputs.who}}' }\n");
   chief.importWorkflow("name: beta\ninputs: { who: nobody }\nnodes:\n  - { id: a, type: agent, prompt: 'hello {{inputs.who}}' }\n");
   const srv = await boot();
 
   await page.goto(srv.url + "/#/runs");
-  await tid(page, "new-run-workflow").selectOption("beta");
+  await openInputSetPanel(page);
+  await tid(page, "input-set-workflow").selectOption("beta");
+  await tid(page, "input-set-name").fill("The whole team");
+  // The JSON is the other half of the switch (15.120); the draft rule is the same either way.
+  await tid(page, "new-run-inputs-view-json").click();
   await tid(page, "new-run-inputs").fill('{"who": "the whole team"}');
   await refresh(page);
-  await expect(tid(page, "new-run-workflow")).toHaveValue("beta");
+  await openInputSetPanel(page);
+  await expect(tid(page, "input-set-name")).toHaveValue("The whole team");
+  await tid(page, "input-set-workflow").selectOption("beta");
+  await tid(page, "new-run-inputs-view-json").click();
   await expect(tid(page, "new-run-inputs")).toHaveValue('{"who": "the whole team"}');
-  await tid(page, "new-run-start").click();
+
+  // Starting saves the collection and runs it; what was typed is in the collection now, not in a draft.
+  await tid(page, "input-set-start").click();
   await expect(tid(page, "run-status")).toHaveText("completed");
   expect(chief.calls()[0].prompt).toContain("hello the whole team");
+  // Starting a run leaves the page on its Runs tab; the collection it created is on the other one.
   await page.goto(srv.url + "/#/runs");
-  // What was typed is gone; the box comes back as the inputs' **shape**, with the workflow's own default in it (15.116),
-  // rather than empty or as a grey sample nobody can edit.
-  await expect(tid(page, "new-run-inputs")).toHaveValue(/\{\s*"who": "nobody"\s*\}/);
-  await expect(tid(page, "new-run-inputs")).not.toHaveValue(/the whole team/);
+  await tid(page, "runs-tab-input-sets").click();
+  await expect(tid(page, "input-set-row-1")).toContainText("The whole team");
+  await expect(tid(page, "input-set-filled-1")).toHaveText("1 of 1 field");
 
+  // Settings and the import box keep their drafts too (the rule is the whole app's, not one field's).
   await page.goto(srv.url + "/#/settings");
   await expect(tid(page, "setting-output-size-limit")).toHaveValue("20000");
-  // Valid changes are saved by themselves and are there after a refresh.
   await tid(page, "setting-output-size-limit").fill("5000");
   await tid(page, "setting-workspace-dir").fill("~/draft-test");
   await expect(tid(page, "settings-status")).toHaveAttribute("data-state", "saved");
@@ -561,7 +570,9 @@ test("E9.7-2 canvas changes to an existing workflow update the workflow itself a
   expect((await storedDraft(page, srv, "designer:flow"))!.nodes[0].prompt ?? "").toBe("");
   expect((await srv.api("GET", "/api/workflows/flow")).body.definition.nodes[0].prompt).toBe("first");
   await tid(page, "nav-runs").click();
-  await tid(page, "new-run-workflow").selectOption("flow");
+  await tid(page, "workflow-panel-flow").click();
+  // The note is about the runs list, so it is shown there (15.126).
+  await tid(page, "runs-tab-runs").click();
   await expect(tid(page, "new-run-unsaved")).toContainText("not a valid workflow yet");
 
   await page.goto(srv.url + "/#/designer/flow");
@@ -570,7 +581,9 @@ test("E9.7-2 canvas changes to an existing workflow update the workflow itself a
   await saved(page, "flow", 2);
   expect(await storedDraft(page, srv, "designer:flow")).toBeUndefined();
   await tid(page, "nav-runs").click();
-  await expect(tid(page, "new-run-workflow")).toHaveValue("flow");
+  // The column still has "flow" chosen, and the note is gone once the workflow is valid again (15.126).
+  await expect(tid(page, "workflow-panel-flow")).toHaveAttribute("data-selected", "true");
+  await tid(page, "runs-tab-runs").click();
   await expect(tid(page, "new-run-unsaved")).toHaveCount(0);
 });
 
@@ -834,7 +847,7 @@ test("E9.11-1 settings that need explaining have a help tooltip with an example"
   // A click opens and closes it, and does not put the cursor into the field next to it.
   await expect(async () => {
     if (!(await text("wf-inputs").isVisible())) await tid(page, "help-wf-inputs").click();
-    await expect(text("wf-inputs").locator("code")).toContainText('"planner": { "prlink": "https://github.com/my-org/app/pull/42" }', { timeout: 1000 });
+    await expect(text("wf-inputs").locator("code")).toContainText('Asked as: Pull request link', { timeout: 1000 });
   }).toPass({ timeout: 15_000 });
   expect(await page.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe("help-wf-inputs");
   // It stays while pinned by the click, also when the pointer moves away; a second click lets it go.
@@ -916,7 +929,8 @@ test("E9.11-1 settings that need explaining have a help tooltip with an example"
 
   // New-run form and Settings.
   await tid(page, "nav-runs").click();
-  await shows("new-run-inputs", "The inputs for this run");
+  await openInputSetPanel(page);
+  await shows("new-run-inputs", "What this run is about");
   await tid(page, "nav-settings").click();
   await shows("setting-workspace-dir", "one subfolder per workflow");
   // The output size limit's "?" is gone (E15.40-1): its hint under the field says it.
@@ -1270,7 +1284,10 @@ test("E9.18-1 everything clickable shows the hand cursor", async ({ chief, boot,
   expect(await cursor("node-prompt")).toBe("text");
 
   await tid(page, "nav-runs").click();
-  for (const id of ["new-run-start", "new-run-workflow", "runs-filter", "run-row-1"]) expect(await cursor(id), id).toBe("pointer");
+  for (const id of ["new-run-new", "workflow-panel-all", "runs-tab-runs"]) expect(await cursor(id), id).toBe("pointer");
+  await gotoRuns(page, srv.url);
+  await expect(tid(page, "run-row-1")).toBeVisible();
+  expect(await cursor("run-row-1")).toBe("pointer");
   await tid(page, "run-row-1").click();
   for (const id of ["btn-pause", "btn-cancel", "gate-approve", "gate-reject", "btn-revert", "revert-to", "replay-next", "replay-node"]) expect(await cursor(id), id).toBe("pointer");
   // Resume is not drawn while the run is going, rather than drawn and disabled (task 15.90).
@@ -1456,7 +1473,9 @@ test("E9.22-1 the pages fill a wide column next to the sidebar", async ({ chief,
   for (const path of ["/#/runs", "/#/runs/1", "/#/settings"]) {
     await page.goto(srv.url + path);
     const c = await column();
-    expect(c.right - c.left, path).toBeGreaterThan(1300);
+    // The Runs page shares its width with the workflow panel (15.125): 1600 − 72 rail − 224 panel − padding is a
+    // wide column still. Settings has no panel, so it keeps the whole space.
+    expect(c.right - c.left, path).toBeGreaterThan(path === "/#/settings" ? 1300 : 1150);
   }
 
   // A very wide window: the column stops growing and stays in the middle of the space next to the sidebar.
@@ -1464,9 +1483,13 @@ test("E9.22-1 the pages fill a wide column next to the sidebar", async ({ chief,
   await page.goto(srv.url + "/#/runs/1");
   await expect(tid(page, "run-status")).toHaveText("completed");
   const side = (await tid(page, "sidenav").boundingBox())!;
+  const panel = await tid(page, "workflows-panel").boundingBox();
+  // The space the page has is what is left after the rail **and** the workflow column.
+  const left = side.width + (panel?.width ?? 0);
   const c = await column();
+  // Its own width does not change — page-width caps it — it is centred in the space the panel leaves.
   expect(c.outer).toBe(1760);
-  expect(Math.abs(c.mid - (side.width + (2400 - side.width) / 2))).toBeLessThan(10);
+  expect(Math.abs(c.mid - (left + (2400 - left) / 2))).toBeLessThan(10);
 });
 
 test("E9.23-1 a sidebar on the left replaces the top bar", async ({ chief, boot, page }) => {
@@ -1523,7 +1546,7 @@ test("E9.25-2 runs are deleted from the run list and from the run page, after a 
   chief.importWorkflow(GATED_WF);
   const srv = await boot();
   await makeRuns(srv, ["done", "done", "done", "gated"]);
-  await page.goto(srv.url + "/#/runs");
+  await gotoRuns(page, srv.url);
   await expect(tid(page, "run-row-4")).toContainText("waiting gate");
 
   // An active run cannot be ticked; nothing ticked, nothing to delete.
@@ -1575,7 +1598,8 @@ test("E9.25-2 runs are deleted from the run list and from the run page, after a 
   await tid(page, "btn-delete-run").click();
   await expect(tid(page, "confirm-delete")).toContainText("Delete run #3?");
   await tid(page, "confirm-delete-yes").click();
-  await expect(page).toHaveURL(/#\/runs$/);
+  // Back to the list it was on, and the address says which list: `#/runs?tab=runs` (15.124).
+  await expect(page).toHaveURL(/#\/runs\?tab=runs$/);
   await expect(tid(page, "run-panel")).toHaveCount(0);
   await expect(tid(page, "runs-table")).toBeVisible();
   await expect(tid(page, "run-row-3")).toHaveCount(0);
@@ -1591,7 +1615,7 @@ test("E9.25-2 runs are deleted from the run list and from the run page, after a 
   await expect(tid(page, "confirm-delete")).toContainText(`Delete run #${fresh}?`);
   await tid(page, "confirm-delete-yes").click();
   await expect(tid(page, `run-row-${fresh}`)).toHaveCount(0);
-  await expect(page, "the row's bin does not open the run").toHaveURL(/#\/runs$/);
+  await expect(page, "the row's bin does not open the run").toHaveURL(/#\/runs(\?tab=runs)?$/);
   await expect(tid(page, "run-panel")).toHaveCount(0);
   await expect(tid(page, "run-row-4"), "the run that was not deleted is still there").toBeVisible();
   expect((await srv.api("GET", `/api/runs/${fresh}`)).status).toBe(404);
@@ -1607,7 +1631,7 @@ test("E9.26-2 the run list is paged", async ({ chief, boot, page }) => {
   chief.importWorkflow(`name: other\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'Go ${fake({ output: { ok: 2 } })}' }\n`);
   const srv = await boot();
   await makeRuns(srv, Array.from({ length: 30 }, (_, i) => ((i + 1) % 3 === 0 ? "other" : "done")));
-  await page.goto(srv.url + "/#/runs");
+  await gotoRuns(page, srv.url);
   const rows = page.locator('[data-testid^="run-row-"]');
 
   await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 30");
@@ -1637,10 +1661,10 @@ test("E9.26-2 the run list is paged", async ({ chief, boot, page }) => {
   // The filter starts again at page 1.
   await tid(page, "runs-pager-next").click();
   await expect(tid(page, "runs-pager-range")).toHaveText("11–20 of 30");
-  await tid(page, "runs-filter").selectOption("other");
+  await tid(page, "workflow-panel-other").click();
   await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 10");
   await expect(rows).toHaveCount(10);
-  await tid(page, "runs-filter").selectOption("");
+  await tid(page, "workflow-panel-all").click();
   await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 30");
 
   // Emptying the last page moves back one page.
@@ -1781,8 +1805,9 @@ test("E9.29-1 a button shows a spinner instead of its label while its action is 
   chief.importWorkflow(DONE_WF);
   const srv = await boot();
   await page.goto(srv.url + "/#/runs");
-  await expect(tid(page, "new-run-workflow")).toHaveValue("done");
-  const start = tid(page, "new-run-start");
+  await openInputSetPanel(page);
+  await expect(tid(page, "input-set-workflow")).toHaveValue("done");
+  const start = tid(page, "input-set-start");
 
   // A start that fails: the spinner, then the label again and the error.
   let release!: () => void;
@@ -1804,7 +1829,7 @@ test("E9.29-1 a button shows a spinner instead of its label while its action is 
   expect(Math.abs(busy.width - idle.width)).toBeLessThan(1);
   expect(Math.abs(busy.height - idle.height)).toBeLessThan(1);
   release();
-  await expect(tid(page, "error")).toHaveText("the server said no");
+  await expect(tid(page, "new-run-error")).toHaveText("the server said no");
   await expect(start).not.toHaveAttribute("aria-busy", /./);
   await expect(start.getByText("Start run")).not.toHaveCSS("visibility", "hidden");
   await expect(start.getByTestId("spinner")).toHaveCount(0);
@@ -2675,7 +2700,9 @@ test("E9.51-1 the designer's side panel has a Workflow tab and a Step tab that f
   await expect(tid(page, "panel-empty")).toContainText("Select a node to edit it");
 });
 
-test("E9.52-1 the workflow's inputs are one JSON with a section per block, shown again when it is run", async ({ chief, boot, page }) => {
+test("E9.52-1 the workflow's inputs are fields with the values as JSON under them, and Run starts at once", async ({ chief, boot, page }) => {
+  // 15.121 replaced the JSON box this case was written for with a field list; the values are still one JSON object,
+  // one section per block when the paths are sections, and Run still starts at once with what the Workflow tab holds.
   chief.importWorkflow(`
 name: by-block
 nodes:
@@ -2687,19 +2714,25 @@ edges: [planner -> runner]
   await page.goto(srv.url + "/#/designer/by-block");
   await expect(tid(page, "flow-node-planner")).toBeVisible();
 
-  // The Workflow tab: one JSON for all blocks; a section per block id is added on request.
+  // The Workflow tab: no fields yet, and one action that declares the two the prompts read.
   await wfTab(page);
-  await tid(page, "wf-inputs-by-block").click();
-  await expect.poll(async () => JSON.parse(await tid(page, "wf-inputs").inputValue())).toEqual({ planner: {}, runner: {} });
-  await tid(page, "wf-inputs").fill('{"planner": {"prlink": "https://x/pull/1"}, "runner": {"mode": "dry"}}');
+  await expect(tid(page, "wf-input-fields")).toHaveCount(0);
+  await tid(page, "wf-inputs-adopt").click();
+  await expect(tid(page, "wf-input-field-0")).toBeVisible();
+  await expect(tid(page, "wf-input-field-1")).toBeVisible();
+  await expect.poll(async () => (await srv.api("GET", "/api/workflows/by-block")).body.definition["input-fields"]?.map((f: any) => f.path)).toEqual(["planner.prlink", "runner.mode"]);
+
+  // The values stay one JSON object, in sections named by the block: set through the field, seen in the JSON.
+  await tid(page, "wf-field-value-0-input").fill("https://x/pull/1");
+  await tid(page, "wf-field-value-1-input").fill("dry");
   await expect.poll(async () => (await srv.api("GET", "/api/workflows/by-block")).body.definition.inputs).toEqual({ planner: { prlink: "https://x/pull/1" }, runner: { mode: "dry" } });
-  // Its tooltip shows that structure.
+
+  // Its tooltip describes fields, not a JSON box.
   await tid(page, "help-wf-inputs").click();
-  await expect(tid(page, "help-text-wf-inputs")).toContainText("one section per block");
-  await expect(tid(page, "help-text-wf-inputs").locator("code")).toContainText('"runner"');
+  await expect(tid(page, "help-text-wf-inputs")).toContainText("What a run of this workflow is asked for");
   await page.keyboard.press("Escape");
 
-  // Run starts at once with that JSON, no dialog in between: each block reads its own section.
+  // Run starts at once: each block reads its own section, and the one left open takes the value the form asked for.
   await tid(page, "btn-run").click();
   await expect(tid(page, "run-status")).toHaveText("completed");
   await expect(tid(page, "start-run")).toHaveCount(0);
@@ -2742,10 +2775,13 @@ test("E9.53-1 JSON is typed in a code editor: colours, line numbers, indenting k
   await tid(page, "wf-inputs-format").click();
   await expect(box).toHaveValue('{\n  "planner": {\n    "prlink": "x"\n  },\n  "runner": {}\n}');
 
-  // The same editor is used for a block's output schema and for a run's inputs on the Runs page.
+  // The same editor is used for a block's output schema and for a run's inputs on the Runs page — the inputs
+  // there are a form with the JSON one disclosure away (15.120).
   await flowNode(page, "planner").click();
   await expect(tid(page, "node-output-schema-code")).toBeVisible();
   await page.goto(srv.url + "/#/runs");
+  await openInputSetPanel(page);
+  await tid(page, "new-run-inputs-view-json").click();
   await expect(tid(page, "new-run-inputs-code")).toBeVisible();
 });
 
@@ -2892,7 +2928,7 @@ test("E9.60-1 a run opens in a panel over the run list, with its own address, ke
   chief.importWorkflow(`name: one\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'A ${fake({ output: { n: 1 } })}' }\n`);
   const srv = await boot();
   for (let i = 0; i < 3; i++) await srv.api("POST", "/api/runs", { workflow: "one" });
-  await page.goto(srv.url + "/#/runs");
+  await gotoRuns(page, srv.url);
   await expect(tid(page, "run-row-3")).toBeVisible();
   await expect(tid(page, "run-panel")).toHaveCount(0);
   const tableWidth = Math.round((await tid(page, "runs-table").boundingBox())!.width);
@@ -3486,104 +3522,110 @@ test("E15.47-1 a tooltip is scanned, not read: short lines, rendered as lines", 
   }
 });
 
-test("E15.49-1 the Start run card is one line, and only shows an inputs editor when there is something to fill in", async ({ chief, boot, page }) => {
+test("E15.49-1 a workflow that asks for nothing still starts, and every action is above the fields", async ({ chief, boot, page }) => {
+  // This case has followed the start card through four shapes: a JSON box with the button under it (reported 2026-11-21),
+  // the button on the select's line (15.49), a numbered two-step card (15.123), and now the collection editor, whose
+  // actions sit at its top (asked 2026-11-25: *"can we put this button at the top?"*). What it has always been about is
+  // that starting a run is possible without hunting for the controls, including when there is nothing to fill in.
   chief.importWorkflow("name: takes-inputs\ninputs: { who: nobody }\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'hello {{inputs.who}}' }\n");
   chief.importWorkflow("name: takes-none\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'PLAIN' }\n");
   const srv = await boot();
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(srv.url + "/#/runs");
-  const card = tid(page, "new-run");
-  await expect(card).toBeVisible();
 
-  // The card says what it is, and the button that starts a run is on the workflow's own line, next to it
-  // (reported 2026-11-21: "this entire block looks ugly" — it was a JSON box with the button under a select).
-  await expect(card).toContainText("Start a run");
-  const row = async () => {
-    const pick = (await tid(page, "new-run-workflow").boundingBox())!, start = (await tid(page, "new-run-start").boundingBox())!;
-    return { sameLine: Math.abs((pick.y + pick.height) - (start.y + start.height)) <= 4, before: start.x > pick.x + pick.width, card: (await card.boundingBox())! };
-  };
+  // With nothing open the page is its input data list, and the way in is one button.
+  await expect(tid(page, "new-run-new")).toBeVisible();
+  await tid(page, "new-run-new").click();
+  const start = (await tid(page, "input-set-start").boundingBox())!;
+  const firstField = (await tid(page, "input-set-name").boundingBox())!;
+  // There is no Save: the one action is Start run, and it is in the panel's footer, so the header is for reading.
+  expect(start.y, "the action is in the panel, after the fields").toBeGreaterThan(firstField.y);
 
-  // A workflow that uses no inputs has nothing to type: no editor, and the card is a single line.
-  await tid(page, "new-run-workflow").selectOption("takes-none");
-  await expect(tid(page, "new-run-inputs-block")).toHaveCount(0);
-  await expect(tid(page, "new-run-inputs")).toHaveCount(0);
-  const plain = await row();
-  expect(plain.sameLine, "the button sits on the select's line").toBe(true);
-  expect(plain.before, "the button is next to the workflow, not under it").toBe(true);
-  expect(plain.card.height, "no editor, so a short card").toBeLessThan(130);
+  // A workflow that asks for nothing says so, and starts as it stands.
+  await tid(page, "input-set-workflow").selectOption("takes-none");
+  await expect(tid(page, "new-run-inputs-no-fields")).toContainText("asks for no fields");
+  await expect(tid(page, "new-run-inputs-form")).toHaveAttribute("data-fields", "0");
+  await expect(tid(page, "input-set-start")).toBeEnabled();
+  await tid(page, "input-set-start").click();
+  await expect(tid(page, "run-status")).toHaveText("completed", { timeout: 30_000 });
 
-  // A workflow that uses one does: the editor is there, still the only way in (9.48 removed the input list).
-  await tid(page, "new-run-workflow").selectOption("takes-inputs");
-  await expect(tid(page, "new-run-inputs")).toBeVisible();
-  // The inputs are **in the box**, not a placeholder (15.116): the shape is what a run is filled into, and the workflow's
-  // own default is already in it — this workflow defaults `who` to "nobody", so that is what the box starts with.
-  await expect(tid(page, "new-run-inputs")).toHaveValue(/"who": "nobody"/);
-  await expect(tid(page, "new-run-inputs-refs")).toHaveCount(0);
-  await expect(tid(page, "new-run-inputs-template")).toHaveCount(0);
-  const withBox = await row();
-  expect(withBox.sameLine, "the button keeps its line").toBe(true);
-  expect(withBox.card.height, "the editor is below the line, not beside the button").toBeGreaterThan(plain.card.height);
+  // A workflow with a field: it holds the workflow's own value and can start with it, with no typing at all.
+  await page.goto(srv.url + "/#/runs");
+  await tid(page, "runs-tab-input-sets").click();
+  await tid(page, "new-run-new").click();
+  await tid(page, "input-set-workflow").selectOption("takes-inputs");
+  await expect(tid(page, "new-run-inputs-who-input")).toHaveValue("nobody");
+  await expect(tid(page, "input-set-start")).toBeEnabled();
 
-  // A draft typed under one workflow stays visible under another, so it is never sent while invisible.
-  await tid(page, "new-run-inputs").fill('{"who": "team"}');
-  await tid(page, "new-run-workflow").selectOption("takes-none");
-  await expect(tid(page, "new-run-inputs")).toBeVisible();
-  await expect(tid(page, "new-run-inputs")).toHaveValue('{"who": "team"}');
-
-  // 375 px: no sideways scrolling, and the button still fits.
+  // 375 px: the column is the strip, the card fits, and nothing scrolls sideways.
   await page.setViewportSize({ width: 375, height: 800 });
-  await expect(tid(page, "new-run-start")).toBeInViewport();
+  await tid(page, "input-set-start").scrollIntoViewIfNeeded();
+  await expect(tid(page, "input-set-start")).toBeInViewport();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, "the page does not scroll sideways at 375 px").toBeLessThanOrEqual(0);
 });
 
-test("E15.116-1 the inputs are given as JSON to fill in, with the workflow's defaults, and follow the workflow", async ({ chief, page }) => {
+test("E15.116-1 the inputs are asked as fields from the workflow's shape, and follow the workflow", async ({ chief, page }) => {
   // Reported 2026-11-23: *"when i wanna add the parameters for the JSON input before i run the workflow, the given scheme is
-  // just a placeholder, and I'm not able to use it directly, and i will have to manually input the json data, which is
-  // super tedious"*. The shape was a grey sample behind an empty box, so a nested object meant typing keys, braces and all.
-  // It is real text now: the shape, with the workflow's own default where it has one, so only what the workflow leaves
-  // open is left to type.
+  // just a placeholder, and I'm not able to use it directly"*. 15.120 then made it a form: the shape is real values, the
+  // default already filled in, and the JSON one click away over the same object.
   chief.importWorkflow("name: nested\ninputs:\n  collect-evidence:\n    colleague_name: ''\n    relationship: peer\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'about {{inputs.collect-evidence.colleague_name}} as {{inputs.collect-evidence.relationship}}' }\n");
   chief.importWorkflow("name: plain\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'x' }\n");
   const srv = await chief.serve();
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`${srv.url}/#/runs`);
-    const box = tid(page, "new-run-inputs");
-    await expect(box).toBeVisible();
-    // Real JSON in the box — the whole nested shape — with the default already filled in and the open field blank.
-    await expect(box).toHaveValue(/"collect-evidence"/);
-    await expect(box).toHaveValue(/"relationship": "peer"/);
-    await expect(box).toHaveValue(/"colleague_name": ""/);
-    expect(JSON.parse(await box.inputValue())).toEqual({ "collect-evidence": { colleague_name: "", relationship: "peer" } });
+    await openInputSetPanel(page);
+    await tid(page, "input-set-workflow").selectOption("nested");
+    // Both fields are on screen, in their section, each holding the value the run would get: the open one is an
+    // empty box to fill, and the one with a default already has it.
+    const open = tid(page, "new-run-inputs-field-collect-evidence.colleague_name");
+    await expect(open).toBeVisible();
+    await expect(tid(page, "new-run-inputs-section-collect-evidence")).toBeVisible();
+    await expect(tid(page, "new-run-inputs-collect-evidence.relationship-input")).toHaveValue("peer");
+    await expect(tid(page, "new-run-inputs-from-workflow-collect-evidence.relationship")).toBeVisible();
 
-    // It is editable as it stands: filling one value is the whole job, and the run is refused only for the blank.
+    // The switch holds one value in two views (asked 2026-11-24: a toggle between the form and the JSON).
+    await tid(page, "new-run-inputs-view-json").click();
+    const box = tid(page, "new-run-inputs");
+    expect(JSON.parse(await box.inputValue())).toEqual({ "collect-evidence": { colleague_name: "", relationship: "peer" } });
+    // A change in the JSON is the field's when the form is switched back to.
     await box.fill(JSON.stringify({ "collect-evidence": { colleague_name: "Dana", relationship: "peer" } }, null, 2));
-    await tid(page, "new-run-start").click();
+    await tid(page, "new-run-inputs-view-form").click();
+    await expect(tid(page, "new-run-inputs-collect-evidence.colleague_name-input")).toHaveValue("Dana");
+    await expect(open).toBeVisible();
+    await tid(page, "input-set-start").click();
     await expect(tid(page, "run-status")).toHaveText("completed", { timeout: 30_000 });
     expect(chief.calls()[0].prompt).toContain("about Dana");
 
-    // After a run the box is the shape again, not empty: the next run is filled into the same shape.
+    // Starting created the input_set: it is in the list, holding what ran. A **new** collection of the same
+    // workflow starts from the workflow's shape again — the value just used is the collection's, not the template's.
     await page.goto(`${srv.url}/#/runs`);
-    await expect(box).toHaveValue(/"relationship": "peer"/);
-    await expect(box).not.toHaveValue(/Dana/);
+    // Starting a run switches the page to its Runs tab, and that choice is kept: back to Collections.
+    await tid(page, "runs-tab-input-sets").click();
+    await expect(tid(page, "input-set-row-1")).toBeVisible();
+    await openInputSetPanel(page);
+    await tid(page, "input-set-workflow").selectOption("nested");
+    await expect(tid(page, "new-run-inputs-collect-evidence.colleague_name-input")).toHaveValue("");
+    await expect(tid(page, "new-run-inputs-collect-evidence.relationship-input")).toHaveValue("peer");
 
-    // Switching to another workflow gives that workflow's shape, and back again gives the first one's.
-    await tid(page, "new-run-workflow").selectOption("plain");
-    await expect(tid(page, "new-run-inputs-block")).toHaveCount(0);
-    await tid(page, "new-run-workflow").selectOption("nested");
-    await expect(box).toHaveValue(/"relationship": "peer"/);
+    // Switching to another workflow asks nothing, and back again gives the first one's shape.
+    await tid(page, "input-set-workflow").selectOption("plain");
+    // Step 2 stays — it is always the second step — and says this workflow asks for nothing.
+    await expect(tid(page, "new-run-inputs-form")).toHaveAttribute("data-fields", "0");
+    await tid(page, "input-set-workflow").selectOption("nested");
+    await expect(tid(page, "new-run-inputs-collect-evidence.relationship-input")).toHaveValue("peer");
 
     // Text the person typed is theirs: changing the workflow does not throw it away.
-    await box.fill('{"collect-evidence": {"colleague_name": "Sam", "relationship": "manager"}}');
-    await tid(page, "new-run-workflow").selectOption("plain");
-    await tid(page, "new-run-workflow").selectOption("nested");
-    await expect(box).toHaveValue(/Sam/);
+    await tid(page, "new-run-inputs-collect-evidence.colleague_name-input").fill("Sam");
+    await tid(page, "input-set-workflow").selectOption("plain");
+    await tid(page, "input-set-workflow").selectOption("nested");
+    await expect(tid(page, "new-run-inputs-collect-evidence.colleague_name-input")).toHaveValue("Sam");
 
-    // And "Fill in the shape" is always there to get back to it.
+    // And "Reset to the defaults" is always there to get back to the shape.
     await tid(page, "new-run-inputs-shape").click();
-    await expect(box).toHaveValue(/"colleague_name": ""/);
-    await expect(box).toHaveValue(/"relationship": "peer"/);
+    await expect(tid(page, "new-run-inputs-collect-evidence.colleague_name-input")).toHaveValue("");
+    await expect(tid(page, "new-run-inputs-collect-evidence.relationship-input")).toHaveValue("peer");
   } finally {
     await srv.stop();
   }

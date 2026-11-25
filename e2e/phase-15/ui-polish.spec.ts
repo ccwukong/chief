@@ -1,4 +1,4 @@
-import { expect, fake, test } from "../helpers";
+import { expect, fake, test, gotoRuns } from "../helpers";
 import type { Page } from "@playwright/test";
 
 /**
@@ -95,7 +95,7 @@ test("E15.91-1 the run panel's navigation is four glyphs and a word, none of the
   const srv = await chief.serve();
   try {
     await page.setViewportSize({ width: 1360, height: 900 });
-    await page.goto(`${srv.url}/#/runs`);
+    await gotoRuns(page, srv.url);
     await tid(page, "run-row-1").click();
     await expect(tid(page, "run-panel-close")).toBeVisible();
 
@@ -177,7 +177,7 @@ test("E15.96-1 every place that deletes one run uses the same bin, and none of t
   const srv = await chief.serve();
   try {
     await page.setViewportSize({ width: 1360, height: 900 });
-    await page.goto(`${srv.url}/#/runs`);
+    await gotoRuns(page, srv.url);
     await expect(tid(page, "run-delete-1")).toBeVisible();
 
     // One per row, small, and the toolbar's for a selection — three of the same component, so they cannot drift.

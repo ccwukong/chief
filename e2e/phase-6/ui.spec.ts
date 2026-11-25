@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { showStep, expect, fake, test as base, type Server, roomyLayout } from "../helpers";
+import { showStep, expect, fake, test as base, type Server, roomyLayout, openInputSetPanel } from "../helpers";
 
 /** `chief` plus a real `chief serve` that is stopped after the test. */
 const test = base.extend<{ boot: (opts?: { env?: Record<string, string>; compact?: boolean }) => Promise<Server> }>({
@@ -146,9 +146,11 @@ edges: [first -> second]
 `);
   const srv = await boot();
   await page.goto(srv.url + "/#/runs");
-  await tid(page, "new-run-workflow").selectOption("live");
+  await openInputSetPanel(page);
+  await tid(page, "input-set-workflow").selectOption("live");
+  await tid(page, "new-run-inputs-view-json").click();
   await tid(page, "new-run-inputs").fill('{"who": "ana"}');
-  await tid(page, "new-run-start").click();
+  await tid(page, "input-set-start").click();
   await expect(tid(page, "run-title")).toContainText("Run #1 · live");
   await page.evaluate(() => { (window as any).__notReloaded = true; });
 

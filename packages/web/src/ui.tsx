@@ -1,5 +1,5 @@
 import { JsonEditor } from "./json-editor";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { HELP } from "./help";
 import { api, STATUS_COLOR } from "./api";
 import { Button } from "./components/ui/button";
@@ -255,7 +255,9 @@ export function JsonField({ value, onChange, testid, rows = 4, placeholder }: { 
 }
 
 export function useHashRoute(): string[] {
-  const read = () => window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  // A `?query` in the hash is the page's own business (`#/runs?tab=runs`), not part of its path: it is kept out of the
+  // parts so a page still matches on its name, and `hashQuery` reads it.
+  const read = () => window.location.hash.replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean).map(decodeURIComponent);
   const [parts, setParts] = useState(read);
   useEffect(() => {
     const on = () => setParts(read());
@@ -266,6 +268,12 @@ export function useHashRoute(): string[] {
 }
 
 export const go = (path: string) => { window.location.hash = path; };
+
+/** The `?name=value` pairs in the hash, for a page whose view is part of its address (`#/runs?tab=runs`). */
+export function hashQuery(): URLSearchParams {
+  const q = window.location.hash.split("?")[1];
+  return new URLSearchParams(q ?? "");
+}
 
 // ── drafts: everything typed is kept in chief's database until it is saved or sent ──────────
 // Drafts live in the `draft` schema of the one SQLite file (not in browser storage), so they
@@ -341,4 +349,112 @@ export function useDraft<T>(key: string, initial: T): [T, (v: T | ((prev: T) => 
   }, [key, value]);
   const clear = useCallback(() => { removeDraft(key); setValue(initial); }, [key]);
   return [value, setValue, clear];
+}
+
+export interface RightPanelResize {
+  width: number;
+  min: number;
+  max: number;
+  dragging: boolean;
+  onPointerDown: (e: ReactPointerEvent) => void;
+  onKeyDown: (e: ReactKeyboardEvent) => void;
+  reset: () => void;
+}
+
+/**
+ * Horizontal resize for a right-hand side panel (task 15.126).
+ *
+ * The width is stored in `draft` under `draftKey` (written once when a drag ends, never on every move),
+ * clamped to `[min, max]` and never wider than the viewport so 375 px never scrolls sideways.
+ * Supports pointer drag, ArrowLeft / ArrowRight (Shift for 64 px), and double-click to reset.
+ */
+export function useRightPanelResize({
+  draftKey,
+  defaultWidth,
+  minWidth = 360,
+  maxWidth,
+}: {
+  draftKey: string;
+  defaultWidth: number | ((winWidth: number) => number);
+  minWidth?: number;
+  maxWidth?: (winWidth: number) => number;
+}): RightPanelResize {
+  const [savedWidth, setSavedWidth] = useDraft(draftKey, 0);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const winWidth = useWindowWidth();
+
+  const bounds = (vw: number) => {
+    const lo = Math.min(minWidth, vw);
+    const rawHi = vw < 640 ? vw : (maxWidth ? maxWidth(vw) : Math.round(vw * 0.85));
+    const hi = Math.min(vw, Math.max(lo, rawHi));
+    return { lo, hi };
+  };
+  const clamp = (w: number, vw = window.innerWidth) => {
+    const { lo, hi } = bounds(vw);
+    return Math.round(Math.min(Math.max(w, lo), hi));
+  };
+
+  const { lo: min, hi: max } = bounds(winWidth);
+  const resolvedDefault = typeof defaultWidth === "function" ? defaultWidth(winWidth) : defaultWidth;
+  const width = clamp(dragWidth ?? (savedWidth || resolvedDefault), winWidth);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX, startW = width;
+    let last = startW, moved = false;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: PointerEvent) => {
+      const next = clamp(startW + (startX - ev.clientX));
+      if (next !== startW) moved = true;
+      last = next;
+      setDragWidth(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (moved) setSavedWidth(last);
+      setDragWidth(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    const step = e.shiftKey ? 64 : 16;
+    if (e.key === "ArrowLeft") { e.preventDefault(); setSavedWidth(clamp(width + step)); }
+    if (e.key === "ArrowRight") { e.preventDefault(); setSavedWidth(clamp(width - step)); }
+  };
+
+  const reset = () => setSavedWidth(0);
+
+  return { width, min, max, dragging: dragWidth !== null, onPointerDown, onKeyDown, reset };
+}
+
+/** Left-edge resize handle for a right-hand slide-over panel (task 15.126). */
+export function PanelResizeHandle({ testid, label, resize }: { testid: string; label: string; resize: RightPanelResize }) {
+  return (
+    <div
+      data-testid={testid}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      tabIndex={0}
+      aria-valuenow={resize.width}
+      aria-valuemin={resize.min}
+      aria-valuemax={resize.max}
+      title="Drag to resize · double-click to reset"
+      className={`group absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none outline-none ${resize.dragging ? "bg-primary/30" : "hover:bg-primary/20 focus-visible:bg-primary/20"}`}
+      onPointerDown={resize.onPointerDown}
+      onDoubleClick={resize.reset}
+      onKeyDown={resize.onKeyDown}
+    >
+      <span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 ${resize.dragging ? "bg-primary" : "bg-transparent group-hover:bg-primary group-focus-visible:bg-primary"}`} />
+    </div>
+  );
 }

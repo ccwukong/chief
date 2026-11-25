@@ -103,3 +103,29 @@ test("E14.2-1 the guardrails run on Node alone, in any editor, and name the fix 
   expect(self.status, `${self.stdout}${self.stderr}`).toBe(0);
   expect(self.stdout).toContain("guardrails: ok");
 });
+
+test("E15.128-1 design system guideline is linked for agents and enforced by guardrails", () => {
+  const ds = readFileSync(join(ROOT_DIR, "docs/design-system.md"), "utf8");
+  for (const heading of ["Shell & Page Layout", "Right Side-Panels", "Button Taxonomy", "Themes, Color Schemes"]) {
+    expect(ds, heading).toContain(heading);
+  }
+  expect(readFileSync(join(ROOT_DIR, "AGENTS.md"), "utf8")).toContain("docs/design-system.md");
+  expect(readFileSync(join(ROOT_DIR, "CLAUDE.md"), "utf8")).toContain("docs/design-system.md");
+  expect(readFileSync(join(ROOT_DIR, "docs/guardrails.md"), "utf8")).toContain("docs/design-system.md");
+
+  const cases: { name: string; code: string; expect: string }[] = [
+    { name: "bg-white", code: 'export const X = () => <div className="bg-white" />;\n', expect: "bg-white" },
+    { name: "hex-bg", code: 'export const X = () => <div className="bg-[#f6f7f9]" />;\n', expect: "arbitrary hex" },
+    { name: "ghost-underline", code: 'export const X = () => <Button variant="ghost" className="text-primary underline">Go</Button>;\n', expect: 'variant="ghost"' },
+  ];
+  for (const c of cases) {
+    const dir = scaffold();
+    try {
+      put(dir, "packages/web/src/probe.tsx", c.code);
+      const r = run(dir);
+      expect(r.code, `${c.name}: ${r.out}`).toBe(1);
+      expect(r.out, c.name).toContain(c.expect);
+      expect(r.out, `${c.name} names fix`).toMatch(/fix:/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});

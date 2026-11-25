@@ -76,7 +76,7 @@ function Refine({ spec, testid, value, onChange, hint }: { spec: RefineSpec; tes
           <span data-testid={`${testid}-refined`} className="flex flex-wrap items-center gap-2 text-slate-600">
             <span>Rewritten by {spec.adapter}{SHOW_COST ? ` (${usd(mine.cost)})` : ""}.</span>
             <Button variant="outline" size="sm" type="button" data-testid={`${testid}-refine-undo`}  onClick={() => { onChange(mine.text); clearMine(); }}>Back to my text</Button>
-            <Button variant="ghost" className="text-primary underline" type="button" data-testid={`${testid}-refine-keep`} onClick={clearMine}>Keep it</Button>
+            <Button variant="link" className="h-auto px-0 underline" type="button" data-testid={`${testid}-refine-keep`} onClick={clearMine}>Keep it</Button>
           </span>
         )}
       </div>

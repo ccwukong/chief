@@ -1,4 +1,4 @@
-import { expect, fake, ROOT_DIR, test, type Server } from "../helpers";
+import { expect, fake, ROOT_DIR, test, type Server, openInputSetPanel } from "../helpers";
 import type { Page } from "@playwright/test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -377,6 +377,20 @@ test("E15.70-1 the rail is the icon column always: no collapse control, names un
   const gc = (await tid(page, "nav-runs-caption").boundingBox())!;
   expect(Math.round(gc.y - (gi.y + gi.height)), "caption is tight under the icon").toBeLessThanOrEqual(4);
 
+  // Every destination has a **drawn** glyph, not an empty box: `Icon` renders `<path d={PATHS[name]}>`, so a name
+  // missing from that table is a blank space where an icon should be, and nothing failed until a person looked at it
+  // (the Inputs item shipped that way on 2026-11-24). Void paths are checked because an empty `d` paints nothing.
+  const items = ["nav-runs", "nav-designer", "nav-schedules", "nav-settings"];
+  for (const id of items) {
+    const paths = await tid(page, id).locator("svg path").evaluateAll((els) => els.map((e) => e.getAttribute("d") ?? ""));
+    expect(paths.length, `${id} has a glyph`).toBeGreaterThan(0);
+    expect(paths.every((d) => d.trim().length > 0), `${id}'s glyph has a drawing`).toBe(true);
+    const box = (await tid(page, id).locator("svg").first().boundingBox())!;
+    expect(Math.round(box.width), `${id}'s glyph is drawn at the rail's size`).toBe(18);
+  }
+  // And chief bot's sparkle, which is a filled path rather than a stroked one.
+  expect((await tid(page, "nav-assistant").locator("svg path").count())).toBeGreaterThan(0);
+
   // One item current at a time, still (E15.66-1 is the detail): Settings is the page, the agent is not open.
   await expect(tid(page, "nav-settings")).toHaveAttribute("aria-current", "page");
   await expect(tid(page, "nav-assistant")).toHaveAttribute("aria-pressed", "false");
@@ -522,6 +536,9 @@ test("E15.79-1 every card has its inside margin, and no rail caption is clipped 
     for (const path of ["/#/runs", "/#/runs/1/full", "/#/settings", "/#/schedules"]) {
       await page.goto(srv.url + path);
       await expect(tid(page, "sidenav")).toBeVisible();
+      // The Runs page opens on its Collections tab, whose card is the collection editor (15.126) — opened here so the
+      // assertion is about a card that page actually draws.
+      if (path === "/#/runs") await openInputSetPanel(page);
       const pads = await page.locator("[class*='bg-card']").evaluateAll((els) =>
         els.map((e) => { const cs = getComputedStyle(e); return `${cs.paddingTop} ${cs.paddingLeft}`; }));
       expect(pads.length, `${path} has a card`).toBeGreaterThan(0);
@@ -665,12 +682,18 @@ test("E15.83-1 a button is shadcn's button: its fill, its radius and its focus r
   // shadcn's default button is not a blue one: `--primary` is `oklch(0.205 0 0)` in light and `oklch(0.922 0 0)` in
   // dark, a neutral fill, and `rounded-md` is 8 px because `--radius` is 0.625rem. chief had put its own blue in
   // `--primary` and its own 6 px in `rounded-md` (asked 2026-11-22).
+  // A workflow, so the card has a step 2 and therefore its filled button: with none imported the only buttons on the
+  // page are links, whose background is transparent — which is how this case measured NaN on 2026-11-24.
+  chief.importWorkflow("name: probe\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'hi' }\n");
   const srv = await chief.serve();
   // Chromium reports an oklch token as `20.5%` and a computed colour as `0.205`, so everything is read as a number
   // on one scale rather than matched as a string.
   const read = () => page.evaluate(() => {
     const cs = getComputedStyle(document.documentElement);
-    const b = document.querySelector<HTMLElement>("main button, [data-testid='assistant-panel'] button, .btn-primary")!;
+    // The start button, **by name**: `main button` is the first button in document order whatever order the selector
+    // list is written in, and that is now the "?" of a help tooltip — a rounded-full, transparent one. It measured
+    // nothing and reported NaN, then a 33,554,400 px corner (found 2026-11-24 by running it).
+    const b = document.querySelector<HTMLElement>("[data-testid='new-run-start']")!;
     const bs = getComputedStyle(b);
     return {
       primary: cs.getPropertyValue("--primary").trim(), ring: cs.getPropertyValue("--ring").trim(),
@@ -681,6 +704,8 @@ test("E15.83-1 a button is shadcn's button: its fill, its radius and its focus r
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(srv.url + "/#/runs");
   await expect(tid(page, "sidenav")).toBeVisible();
+  await openInputSetPanel(page);
+  await tid(page, "input-set-workflow").selectOption("probe");
   try {
     /** Lightness on 0–100, whatever unit it arrived in. */
     const l = (css: string) => {
@@ -708,6 +733,9 @@ test("E15.83-1 a button is shadcn's button: its fill, its radius and its focus r
     // In the dark the same token is near-white with dark ink — shadcn inverts it rather than tinting it.
     await srv.api("PUT", "/api/settings", { theme: "dark" });
     await page.reload();
+    // A reload closes the editor, and the button it measures is inside it.
+    await openInputSetPanel(page);
+    await tid(page, "input-set-workflow").selectOption("probe");
     const dark = await read();
     expect(l(dark.primary), "shadcn's dark primary is 0.922").toBeGreaterThan(88);
     expect(neutral(dark.fill), `${dark.fill} is neutral`).toBe(true);
@@ -833,7 +861,7 @@ test("E15.86-1 the validation marks and the link are the theme's own, in both th
     const css = (el: Element | null, prop: string) => (el ? getComputedStyle(el).getPropertyValue(prop) : "");
     const root = getComputedStyle(document.documentElement);
     const input = document.querySelector('[data-testid="wf-name"]');
-    const link = document.querySelector('[data-testid="wf-inputs-by-block"]');
+    const link = document.querySelector('[data-testid="wf-inputs-add"]');
     return {
       destructive: root.getPropertyValue("--destructive").trim(),
       primary: root.getPropertyValue("--primary").trim(),
@@ -851,7 +879,7 @@ test("E15.86-1 the validation marks and the link are the theme's own, in both th
     for (const theme of ["light", "dark"] as const) {
       await srv.api("PUT", "/api/settings", { theme });
       await page.goto(`${srv.url}/#/designer/probe`);
-      // The workflow's settings — and so its name field and its "Add a section per block" link — live in the designer's
+      // The workflow's settings — and so its name field and its field-list links — live in the designer's
       // panel, which starts closed on a wide window (15.65).
       if (!(await tid(page, "wf-name").isVisible().catch(() => false))) await tid(page, "panel-toggle").click();
       // An empty name is what marks the field invalid in the designer.

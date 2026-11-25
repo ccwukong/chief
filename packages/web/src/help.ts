@@ -15,7 +15,12 @@ export const HELP: Record<string, { text: string; use?: string; example?: string
     ].join("\n"),
     example: "~/code/my-service",
   },
-  "wf-inputs": { text: "The workflow's inputs: one JSON object for the whole workflow, with one section per block, named by the block's id. A block's prompt reads its own values as {{inputs.<block id>.<name>}} (any block may read any section). Run shows this JSON so the values can be changed for that run; what is set here is the default.", example: '{\n  "planner": { "prlink": "https://github.com/my-org/app/pull/42" },\n  "runner": { "dry-run": true }\n}\n\nIn planner\'s prompt: "review {{inputs.planner.prlink}}"' },
+  "wf-inputs": { text: [
+      "What a run of this workflow is asked for. One field each: the words it is asked with, the path its prompt reads, the kind of value, and whether a run must give it.",
+      "A field's value is the default a run starts with. A field marked “must be given” cannot also have one.",
+      "A path with dots (planner.prlink) puts the value in a section, which is a way of grouping them. A one-word path (prlink) is the simplest.",
+    ].join("\n"), example: "Asked as: Pull request link\nPath: prlink\nType: one line of text\nMust be given: yes\n\nIn the prompt: review {{inputs.prlink}}" },
+  "wf-inputs-json": { text: "The same values as one JSON object: the default of every field, and anything no field holds — an object or a list, which no field can ask for. Use it for the shape a prompt reads at depth, or paste one in.", example: '{\n  "prlink": "",\n  "params": { "window": [1, 2, 3] }\n}' },
 
     // No `use` block: a tooltip with text, a use case and an example is three sections to open one "?",
   // and this one was reported as "way too much, no one would read this" (2026-11-21). The examples are
@@ -115,7 +120,11 @@ export const HELP: Record<string, { text: string; use?: string; example?: string
   "inner-type": { text: "What runs for each element: an agent with a prompt, or a script." },
 
   // ── new run ──────────────────────────────────────────────────────────────
-  "new-run-inputs": { text: "The inputs for this run: one JSON object in the same shape as the workflow's own inputs, with one section per block, named by the block's id. A prompt reads a value as {{inputs.<block id>.<name>}}. While the box is empty it shows, in grey, the shape the workflow's prompts expect. An input you leave out takes the value stored in the workflow, if it has one.", example: '{\n  "planner": { "prlink": "https://github.com/my-org/app/pull/42" },\n  "runner": {}\n}' },
+  "new-run-inputs": { text: [
+      "The input values this run is given: one field per input the workflow asks for, each already holding the workflow's own value. Change the ones this run differs in, and leave the rest.",
+      "A field marked “workflow default” still holds the value the workflow was saved with.",
+      "The JSON tab shows the same object as text, if you would rather paste or change it there.",
+    ].join("\n"), example: "Pull request link: https://github.com/my-org/app/pull/42\n\nAs JSON: { \"prlink\": \"https://github.com/my-org/app/pull/42\" }" },
 
   // ── schedules ────────────────────────────────────────────────────────────
   "schedule-cron": { text: "When the workflow runs, as a five-field cron expression: minute, hour, day of the month, month, day of the week. Times are local. A star means every value, a range is written 1-5, a list 1,3,5, and a step *\/15. Day of the week counts Sunday as 0 or 7. The row shows what the expression means and when it next fires, so you can check it at a glance.", use: "Every weekday at half past eight, so the review is ready when you sit down: 30 8 * * 1-5.", example: "0 9 * * *      every day at 09:00\n*\/15 * * * *    every 15 minutes\n0 18 * * 5    every Friday at 18:00" },

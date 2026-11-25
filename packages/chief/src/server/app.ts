@@ -8,7 +8,7 @@ import { enabledProviders, providerChosenOff, providerLocated } from "../provide
 import { askAboutRun, askAdapter, askConversation, assistantAdapterFor, assistantAnswer, assistantActions, assistantConversation, assistantTooling, cancelAssistantAnswer } from "../ask.ts";
 import { answerGate, driveRun, EngineError, requestCancel, requestPause, rerunRun, resumeRun, startRun } from "../engine/engine.ts";
 import { revertRun } from "../engine/saga.ts";
-import { addSchedule, approveWorkflow, cloneWorkflow, ConflictError, deleteRuns, doctor, ensureMcp, knownFolders, listModels, refreshMcp, pendingApprovals, refinePrompt, runDetail, changeStep, setModelForSteps, setStepModel, saveDefinition, setSchedule, validateFull } from "../ops.ts";
+import { addInputSet, addSchedule, approveWorkflow, cloneWorkflow, ConflictError, deleteRuns, doctor, ensureMcp, inputSetValues, knownFolders, listModels, refreshMcp, pendingApprovals, refinePrompt, runDetail, changeStep, setModelForSteps, setInputSet, readiness, setStepModel, saveDefinition, setSchedule, validateFull } from "../ops.ts";
 import { log, logDebug, logging } from "../log.ts";
 import { defaultWorkspace } from "../paths.ts";
 import { runProcess } from "../util/proc.ts";
@@ -19,10 +19,11 @@ import type { Store } from "../store/store.ts";
 import { TERMINAL_RUN } from "../store/types.ts";
 import { parseText, toYaml, validateWorkflow } from "../workflow/load.ts";
 import { describeInputs } from "../workflow/inputs.ts";
+import { mergeInputs } from "../workflow/inputs.ts";
 import { describeCron, minuteKey, nextRun } from "../util/cron.ts";
 
 /** See /api/meta. Keep in step with REQUIRED_API in packages/web/src/app.tsx. */
-export const API_LEVEL = 14;
+export const API_LEVEL = 17;
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -296,6 +297,9 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
     return c.json(rows.map((w) => ({
       name: w.name, version: w.version, description: w.definition.description ?? null, nodes: w.definition.nodes.length,
       updated_at: w.updated_at, archived: w.archived_at != null, archived_at: w.archived_at, runs: store.countWorkflowRuns(w.id),
+      // How many collections it has: the workflow column shows it, so choosing a workflow is a decision with a fact
+      // in it rather than a list of names (15.125). A handful of workflows, so one count each is the honest way.
+      input_sets: store.countInputSets(w.id),
     })));
   });
   app.post("/api/workflows/validate", async (c) => {
@@ -485,7 +489,17 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
     // The folder first: its MCP servers are read from inside it.
     if (target?.base_dir) { try { mkdirSync(target.base_dir, { recursive: true }); } catch { /* reported by the run if it matters */ } }
     if (target) await ensureMcp(store, target.definition, target.base_dir ?? process.cwd());
-    const run = startRun(store, b.workflow, b.inputs ?? {}, b.budget ?? null);
+    // A run can be started from an input data set (15.122): its stored values are the run's, copied in as a snapshot,
+    // so editing it afterwards never rewrites a run that already happened. `inputs` given beside it still win, which is
+    // what "start this one with a value changed" needs.
+    let fromInputSet: { id: number; name: string } | null = null;
+    let inputs: Record<string, unknown> = b.inputs ?? {};
+    if (b.input_set !== undefined && b.input_set !== null) {
+      const got = inputSetValues(store, Number(b.input_set), b.workflow);
+      fromInputSet = { id: got.set.id, name: got.set.name };
+      inputs = mergeInputs(got.values, inputs);
+    }
+    const run = startRun(store, b.workflow, inputs, b.budget ?? null, null, null, fromInputSet);
     launch(run.id);
     return c.json(runDetail(store, run.id), 201);
   });
@@ -725,6 +739,55 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
   });
   app.delete("/api/schedules/:id", (c) => {
     if (!store.removeSchedule(id(c.req.param("id"), "schedule id"))) throw new EngineError(`schedule ${c.req.param("id")} not found`);
+    return c.json({ ok: true });
+  });
+
+  // ── input data sets: input values prepared over days, used when a run is started (15.122) ────
+  /**
+   * One as the page reads it: its values, its workflow's name, and how ready it is. Readiness is computed by
+   * `readiness`, the same function the start uses, so one shown as ready cannot be refused on the click.
+   */
+  const inputSetView = (s: any) => {
+    const wf = store.getWorkflow(s.workflow_name);
+    const r = wf ? readiness(wf, s.values ?? {}) : { ready: false, missingRequired: [], missing: [], fields: 0, filled: 0 };
+    return {
+      id: s.id, workflow: s.workflow_name, name: s.name, values: s.values ?? {},
+      created_at: s.created_at, updated_at: s.updated_at,
+      workflow_archived: !!s.workflow_archived,
+      ...r,
+    };
+  };
+  app.get("/api/input-sets", (c) => {
+    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 25) || 25, 1), 200);
+    const offset = Math.max(Number(c.req.query("offset") ?? 0) || 0, 0);
+    const name = c.req.query("workflow");
+    const wf = name ? store.getWorkflow(name) : null;
+    if (name && !wf) throw new EngineError(`workflow "${name}" not found`);
+    c.header("X-Total-Count", String(store.countInputSets(wf?.id)));
+    return c.json(store.listInputSets(limit, offset, wf?.id).map(inputSetView));
+  });
+  app.post("/api/input-sets", async (c) => {
+    const b = await body(c);
+    const created = addInputSet(store, String(b.workflow ?? ""), b.name, b.values ?? {});
+    return c.json(inputSetView(store.inputSetWithWorkflow(created.id)), 201);
+  });
+  app.get("/api/input-sets/:id", (c) => {
+    const s = store.inputSetWithWorkflow(id(c.req.param("id"), "input data set id"));
+    if (!s) throw new EngineError(`input data set ${c.req.param("id")} not found`);
+    return c.json(inputSetView(s));
+  });
+  app.patch("/api/input-sets/:id", async (c) => {
+    const b = await body(c);
+    const patch: { name?: unknown; values?: unknown } = {};
+    if (b.name !== undefined) patch.name = b.name;
+    if (b.values !== undefined) patch.values = b.values;
+    setInputSet(store, id(c.req.param("id"), "input data set id"), patch);
+    return c.json(inputSetView(store.inputSetWithWorkflow(id(c.req.param("id"), "input data set id"))));
+  });
+  app.delete("/api/input-sets/:id", (c) => {
+    // The runs started from it keep their own copy of the values and its name: deleting one loses nothing a run is
+    // made of, which is why no confirmation is needed beyond the bin's own.
+    if (!store.removeInputSet(id(c.req.param("id"), "input data set id"))) throw new EngineError(`input data set ${c.req.param("id")} not found`);
     return c.json({ ok: true });
   });
 

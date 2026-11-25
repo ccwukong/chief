@@ -34,7 +34,7 @@ export function GateCard({ gate, onAnswered, onChangeStep }: { gate: any; onAnsw
       {onChangeStep && (
         <p data-testid="gate-change-step" className="mt-3 text-xs text-slate-600">
           Not a question you can answer? An answer goes into the step's current session, with its current prompt.{" "}
-          <Button variant="ghost" className="text-primary underline" type="button" onClick={onChangeStep}>Change this step instead</Button>: a new prompt withdraws the question and starts the step again.
+          <Button variant="link" className="h-auto px-0 underline" type="button" onClick={onChangeStep}>Change this step instead</Button>: a new prompt withdraws the question and starts the step again.
         </p>
       )}
     </div>

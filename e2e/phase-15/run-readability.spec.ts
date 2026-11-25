@@ -82,7 +82,10 @@ test("E15.89-2 read-only JSON is highlighted text, not an editor, and replay row
     // these blocks cannot be typed in (asked 2026-11-22: "just the json syntax highlight will do").
     const code = tid(page, "run-inputs-json");
     // The inputs are a fold — they are context, not what a run page is for — so they are opened before being read.
-    if (!(await code.isVisible())) await tid(page, "run-inputs").locator("summary").click();
+    if (!(await code.isVisible())) {
+      await tid(page, "run-inputs").locator("summary").first().click();
+      await tid(page, "run-inputs-json-view").locator("summary").click();
+    }
     await expect(code).toBeVisible();
     const block = await code.evaluate((el) => {
       const box = el.closest("[data-json-code]")!;

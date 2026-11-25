@@ -12,8 +12,7 @@ and contributions are welcome on those terms.
 - Run what the change touches, not the whole suite:
 
   ```sh
-  npm run typecheck
-  npm run lint
+  npm run check                       # typecheck, lint (--max-warnings 0), and guardrails
   npx playwright test -g "E1.6-1"     # the cases the change affects
   ```
 
@@ -70,7 +69,7 @@ first instead of a pull request, and we will work something out.
 - One task ID, one change. Update the task's `Status` in the dev plan in the same commit, and never leave
   a task `in progress` when you stop.
 - Record honestly: if a case could not be run, mark it `not run` with the reason. Never mark it passed.
-- Tests never touch the real `.chief/`, never spend real tokens (the agent CLIs are faked by default),
+- Tests never touch the real `~/.chief/`, never spend real tokens (the agent CLIs are faked by default),
   and never post to a real service.
 - Match the code conventions: lower-case kebab-case file names, snake_case for SQL and the agent JSON
   contract, `<schema>__<table>` table names, numbered migrations that are never edited once applied.

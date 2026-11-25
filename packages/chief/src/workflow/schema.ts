@@ -120,6 +120,26 @@ const mapNode = z
 
 export const nodeSchema = z.discriminatedUnion("type", [agentNode, scriptNode, gateNode, mapNode]);
 
+/**
+ * A run input, described so that a screen can ask for it in words (task 15.119). `path` is the
+ * `{{inputs.<path>}}` dotted path; `type` is the ask gate's vocabulary, plus `number`, so chief keeps
+ * one form language (`checkForm` / `AskGate`). Deliberately **no `default`**: the default is
+ * `inputs[path]`, and one value with two sources is how they drift apart.
+ */
+const inputField = z
+  .object({
+    path: z.string().regex(/^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/, "a path is one or more segments of letters, digits, dashes and underscores, separated by dots"),
+    label: z.string().min(1, "a field needs a label: what the person is asked"),
+    type: z.enum(["text", "long-text", "number", "choose-one", "choose-many", "yes-no"]),
+    required: z.boolean().default(false),
+    description: z.string().optional(),
+    options: z.array(z.object({ label: z.string().min(1), detail: z.string().optional(), value: z.any() }).strict()).optional(),
+  })
+  .strict();
+
+export type InputField = z.infer<typeof inputField>;
+
+
 const edge = z.union([
   z.string().regex(/^\s*[a-z0-9-]+\s*->\s*[a-z0-9-]+\s*$/, 'edges look like "a -> b"'),
   z.object({ from: id, to: id }).strict(),
@@ -132,6 +152,7 @@ export const workflowSchema = z
     agent: z.string().optional(),
     budget: z.object({ "warn-usd": z.number().positive().optional(), "max-usd": z.number().positive().optional() }).strict().optional(),
     inputs: z.record(z.any()).default({}),
+    "input-fields": z.array(inputField).optional(),
     nodes: z.array(nodeSchema).min(1),
     edges: z.array(edge).default([]),
   })

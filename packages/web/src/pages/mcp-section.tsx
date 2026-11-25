@@ -157,10 +157,10 @@ function McpAuth({ agent, name, action, onDone }: { agent: string; name: string;
   const open = !!flow && !["done", "failed", "cancelled"].includes(flow.status);
   return (
     <span className="inline-flex flex-wrap items-baseline gap-1.5" data-testid={`mcp-auth-${agent}-${name}`}>
-      {!flow && <Button variant="ghost" className="text-primary underline" type="button" disabled={busy} data-testid={`mcp-auth-start-${agent}-${name}`} onClick={start}>{action === "login" ? "Authenticate" : "Sign out"}</Button>}
+      {!flow && <Button variant="link" className="h-auto px-0 underline" type="button" disabled={busy} data-testid={`mcp-auth-start-${agent}-${name}`} onClick={start}>{action === "login" ? "Authenticate" : "Sign out"}</Button>}
       {open && <span className="text-sm text-slate-500" data-testid={`mcp-auth-waiting-${agent}-${name}`}>{flow!.mode === "url" ? "waiting for the browser" : "a browser window should have opened"}…</span>}
       {open && flow!.command && <code className="mono mt-0.5 block w-full break-all text-sm text-slate-500" data-testid={`mcp-auth-cmd-${agent}-${name}`}>{flow!.command}</code>}
-      {open && <Button variant="ghost" className="underline" type="button" data-testid={`mcp-auth-cancel-${agent}-${name}`} onClick={stop}>Cancel</Button>}
+      {open && <Button variant="link" className="h-auto px-0 underline" type="button" data-testid={`mcp-auth-cancel-${agent}-${name}`} onClick={stop}>Cancel</Button>}
       {flow && ["done", "failed", "cancelled"].includes(flow.status) && (
         <span data-testid={`mcp-auth-result-${agent}-${name}`} data-status={flow.status}
           className={`text-sm ${flow.status === "done" ? "text-green-800" : flow.status === "cancelled" ? "text-slate-500" : "text-red-800"}`}>

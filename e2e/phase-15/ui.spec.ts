@@ -1,4 +1,4 @@
-import { expect, FAKE_ANTIGRAVITY, fake, test } from "../helpers";
+import { expect, FAKE_ANTIGRAVITY, fake, test, gotoRuns, openInputSetPanel } from "../helpers";
 import type { Page } from "@playwright/test";
 
 /**
@@ -21,12 +21,13 @@ test("E15.1-1 the Schedules page lists, adds, disables, removes and pages schedu
     // Add two: the row shows the workflow, the expression, what it means, its next firing and its inputs.
     await tid(page, "schedule-workflow").selectOption("daily");
     await tid(page, "schedule-cron").fill("0 9 * * *");
-    await tid(page, "schedule-inputs").fill('{ "day": "today" }');
+    // The inputs are a field per input the workflow asks for (15.121); this one's prompt reads `day` through a
+    // template, so it is declared first, then given its value — one object either way.
     await tid(page, "schedule-add").click();
     await expect(tid(page, "schedule-row-1")).toContainText("daily");
     await expect(tid(page, "schedule-description-1")).toHaveText("every day at 09:00");
     await expect(tid(page, "schedule-cron-1")).toHaveValue("0 9 * * *");
-    await expect(tid(page, "schedule-inputs-1")).toHaveValue('{"day":"today"}');
+    await expect(tid(page, "schedule-inputs-summary-1")).toHaveText("no inputs");
     await expect(tid(page, "schedule-state-1")).toHaveText("enabled");
     // "Next run" is a real time from the server's own parser: the next 09:00, today or tomorrow.
     await expect(tid(page, "schedule-next-1")).toHaveText(/^\d{4}-\d{2}-\d{2}T09:00$/);
@@ -292,7 +293,7 @@ test("E15.15-1 with no agent CLI the app says so, counts it, and cannot start a 
   try {
     // The server finds none of them (detection runs at startup), so it offers none.
     await expect.poll(async () => (await srv.api("GET", "/api/meta")).body.usable_adapters).toEqual([]);
-    await page.goto(`${srv.url}/#/runs`);
+    await gotoRuns(page, srv.url);
     // A bar that says it, with the way to fix it.
     const bar = tid(page, "no-agent-cli");
     await expect(bar).toBeVisible();
@@ -307,10 +308,13 @@ test("E15.15-1 with no agent CLI the app says so, counts it, and cannot start a 
     await expect(tid(page, "notification-no-agent")).toContainText("Runs cannot start");
     await tid(page, "notification-no-agent").click();
     await expect(page).toHaveURL(/#\/settings$/);
-    // The run cannot start, and the button says why before it is pressed.
+    // The run cannot start, and the button says why before it is pressed: the message sits with the collections, and
+    // the editor's Start run is disabled by it (15.126).
     await page.goto(`${srv.url}/#/runs`);
-    await expect(tid(page, "new-run-start")).toBeDisabled();
     await expect(tid(page, "new-run-no-agent")).toContainText("No agent CLI is installed");
+    await openInputSetPanel(page);
+    await expect(tid(page, "input-set-start")).toBeDisabled();
+    await expect(tid(page, "input-set-start")).toHaveAttribute("title", /No agent CLI is installed/);
     // Settings shows all six as not detected, each with its switch off and disabled.
     await page.goto(`${srv.url}/#/settings`);
     await expect(tid(page, "providers")).toBeVisible();
@@ -347,8 +351,9 @@ test("E15.15-2 with every agent CLI switched off the warning names them and says
   try {
     // Both are found, so both are on: the ordinary state, with no warning at all.
     await expect.poll(async () => (await meta()).found_providers).toEqual(["claude-code", "antigravity"]);
-    await page.goto(`${srv.url}/#/runs`);
-    await expect(tid(page, "new-run")).toBeVisible();
+    await gotoRuns(page, srv.url);
+    await tid(page, "runs-tab-input-sets").click();
+    await expect(tid(page, "input-sets-table")).toBeVisible();
     expect(await tid(page, "no-agent-cli").count()).toBe(0);
 
     // A person switches both off (the default moves first, or chief would have none).
@@ -377,7 +382,9 @@ test("E15.15-2 with every agent CLI switched off the warning names them and says
     await expect(page).toHaveURL(/#\/settings$/);
     // The run button says why too, and it is not the "not installed" wording.
     await page.goto(`${srv.url}/#/runs`);
-    await expect(tid(page, "new-run-start")).toBeDisabled();
+    await openInputSetPanel(page);
+    await expect(tid(page, "input-set-start")).toBeDisabled();
+    await expect(tid(page, "input-set-start")).toHaveAttribute("title", /Every agent CLI is switched off/);
     await expect(tid(page, "new-run-no-agent")).toContainText("Every agent CLI is switched off");
     await expect(tid(page, "new-run-no-agent")).toContainText("Claude Code and Antigravity were found");
 
@@ -385,7 +392,9 @@ test("E15.15-2 with every agent CLI switched off the warning names them and says
     await srv.api("PUT", "/api/settings", { "claude-code.enabled": true });
     await page.reload();
     await expect(tid(page, "no-agent-cli")).toHaveCount(0);
-    await expect(tid(page, "new-run-start")).toBeEnabled();
+    // The editor was closed by the reload; opening one shows the button enabled now that a CLI is usable.
+    await openInputSetPanel(page);
+    await expect(tid(page, "input-set-start")).toBeEnabled();
   } finally {
     await srv.stop();
   }
@@ -403,7 +412,7 @@ test("E15.33-1 the run page says the totals are tokens, on one line at 375 px", 
   expect(ran.code, ran.stdout + ran.stderr).toBe(0);
   const srv = await chief.serve();
   try {
-    await page.goto(`${srv.url}/#/runs`);
+    await gotoRuns(page, srv.url);
     await tid(page, "run-row-1").click();
     // A person can tell these are token counts, and the thousands are separated.
     await expect(tid(page, "run-totals")).toHaveText("1,164,981 tokens in · 54,439 tokens out");
@@ -430,7 +439,7 @@ test("E15.33-2 the run list shows each run's input and output tokens, labelled",
   expect(chief.run(["run", "gated"]).code).toBe(0);
   const srv = await chief.serve();
   try {
-    await page.goto(`${srv.url}/#/runs`);
+    await gotoRuns(page, srv.url);
     // The column header is the label; each row carries the same compact form as the run page.
     await expect(tid(page, "runs-table").locator("thead")).toContainText("Tokens");
     await expect(tid(page, "run-tokens-1")).toHaveText("1,164,981 in · 54,439 out");
@@ -456,7 +465,7 @@ test("E15.33-3 the run list pages 10 runs at a time by default", async ({ chief,
   const srv = await chief.serve();
   try {
     for (let i = 0; i < 12; i++) expect((await srv.api("POST", "/api/runs", { workflow: "many" })).status).toBe(201);
-    await page.goto(`${srv.url}/#/runs`);
+    await gotoRuns(page, srv.url);
     const rows = page.locator('[data-testid^="run-row-"]');
     await expect(tid(page, "runs-pager-range")).toHaveText("1–10 of 12");
     await expect(tid(page, "runs-pager-page")).toHaveText("Page 1 of 2");

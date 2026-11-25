@@ -11,12 +11,14 @@ import { useAppTheme } from "../theme";
 import { autoLayout, cleanNode, newNode, placeNodes, type NodeDef } from "../designer/model";
 import { designerBridge } from "../designer/bridge";
 import { NodePanel } from "../designer/panel";
-import { AsyncButton, COMPACT_BELOW, ErrorBox, go, Help, Modal, readDraft, removeDraft, TrashButton, useDraft, useWindowWidth, writeDraft } from "../ui";
+import { AsyncButton, COMPACT_BELOW, ErrorBox, go, Help, Modal, PanelResizeHandle, readDraft, removeDraft, TrashButton, useDraft, useRightPanelResize, useWindowWidth, writeDraft } from "../ui";
+import { FieldInput, getPath, inferFieldType, inputRefsOf, parseInputs, setInputPath } from "../run-inputs";
 import { JsonEditor } from "../json-editor";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
+import { Checkbox } from "../components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 const DefsContext = createContext<Record<string, NodeDef>>({});
@@ -87,7 +89,7 @@ function DesignerInner({ name }: { name: string | null }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [defs, setDefs] = useState<Record<string, NodeDef>>({});
-  const [wf, setWf] = useState({ name: "", description: "", warn: "", max: "", baseDir: "", agent: "", inputs: {} as Record<string, unknown> });
+  const [wf, setWf] = useState({ name: "", description: "", warn: "", max: "", baseDir: "", agent: "", inputs: {} as Record<string, unknown>, inputFields: [] as any[] });
   /** Text of the workflow inputs field; `wf.inputs` follows it whenever it is a valid JSON object. */
   const [inputsText, setInputsText] = useState("{}");
   const [selected, setSelected] = useState<string | null>(null);
@@ -135,6 +137,7 @@ function DesignerInner({ name }: { name: string | null }) {
   nameRef.current = name;
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText, clearImportText] = useDraft("designer:import-text", "");
+  const newWfResize = useRightPanelResize({ draftKey: "ui:new-wf-panel-width", defaultWidth: 448, minWidth: 360 });
   /** Width of the side panel on wide windows, set with the handle on its left edge; kept across reloads. */
   const [savedPanelWidth, setPanelWidth] = useDraft("ui:designer-panel-width", window.innerWidth < COMPACT_BELOW ? PANEL_MIN : PANEL_DEFAULT);
   /** The width while the handle is being dragged; stored once, when it is let go. */
@@ -241,7 +244,7 @@ function DesignerInner({ name }: { name: string | null }) {
     setDefs(nextDefs);
     setNodes(nextNodes);
     setEdges((d.edges ?? []).filter((e: any) => keyOf[e.from] && keyOf[e.to]).map((e: any) => ({ id: `${keyOf[e.from]}-${keyOf[e.to]}`, source: keyOf[e.from], target: keyOf[e.to] })));
-    setWf({ name: d.name ?? "", description: d.description ?? "", warn: String(d.budget?.["warn-usd"] ?? ""), max: String(d.budget?.["max-usd"] ?? ""), baseDir: baseDir ?? "", agent: d.agent ?? "", inputs: d.inputs ?? {} });
+    setWf({ name: d.name ?? "", description: d.description ?? "", warn: String(d.budget?.["warn-usd"] ?? ""), max: String(d.budget?.["max-usd"] ?? ""), baseDir: baseDir ?? "", agent: d.agent ?? "", inputs: d.inputs ?? {}, inputFields: Array.isArray(d["input-fields"]) ? d["input-fields"] : [] });
     setInputsText(Object.keys(d.inputs ?? {}).length ? JSON.stringify(d.inputs, null, 2) : "{}");
     setSelected(null);
     setValidation(null);
@@ -383,10 +386,41 @@ function DesignerInner({ name }: { name: string | null }) {
       ...(wf.agent ? { agent: wf.agent } : {}),
       ...(Object.keys(budget).length ? { budget } : {}),
       ...(Object.keys(wf.inputs).length ? { inputs: wf.inputs } : {}),
+      // Carried through untouched: the field list is edited by 15.121, and a designer that dropped it on
+      // autosave would delete a declaration just because someone opened the workflow.
+      ...(wf.inputFields.length ? { "input-fields": wf.inputFields } : {}),
       nodes: nodes.filter((n) => defs[n.id]).map((n) => ({ ...cleanNode(defs[n.id]), position: { x: Math.round(n.position.x), y: Math.round(n.position.y) } })),
       edges: edges.filter((e) => idOf(e.source) && idOf(e.target)).map((e) => ({ from: idOf(e.source), to: idOf(e.target) })),
     };
   }, [defs, nodes, edges, wf]);
+
+  // ── the input fields (15.121) ──────────────────────────────────────────────
+  /** The inputs the prompts read: what "Add the inputs the prompts use" declares. */
+  const usedPaths = useMemo(() => inputRefsOf({ nodes: nodes.filter((n) => defs[n.id]).map((n) => defs[n.id]) }), [defs, nodes]);
+  const declaredPaths = new Set(wf.inputFields.map((f: any) => f.path));
+  const suggested = usedPaths.filter((p) => !declaredPaths.has(p));
+  const setField = (i: number, patch: Record<string, unknown>) =>
+    setWf((w) => ({ ...w, inputFields: w.inputFields.map((f: any, k: number) => (k === i ? { ...f, ...patch } : f)) }));
+  const setOption = (i: number, j: number, patch: Record<string, unknown>) =>
+    setWf((w) => ({ ...w, inputFields: w.inputFields.map((f: any, k: number) => (k === i ? { ...f, options: (f.options ?? []).map((o: any, m: number) => (m === j ? { ...o, ...patch } : o)) } : f)) }));
+  /** A field's value **is** its default: written to `inputs[path]`, the one place a default lives (15.119). */
+  const setFieldValue = (path: string, value: unknown) => {
+    const next = setInputPath(wf.inputs, path, value);
+    setWf((w) => ({ ...w, inputs: next }));
+    setInputsText(JSON.stringify(next, null, 2));
+  };
+  const addField = () => {
+    const n = wf.inputFields.length + 1;
+    setWf((w) => ({ ...w, inputFields: [...w.inputFields, { path: `input-${n}`, label: `Input ${n}`, type: "text", required: false }] }));
+  };
+  /** Declare what the prompts already use, typed from its default and labelled by its last name — never by guessing a value. */
+  const adoptSuggested = () => {
+    const added = suggested.map((path) => {
+      const r = getPath(wf.inputs, path);
+      return { path, label: path.split(".").pop() ?? path, type: inferFieldType(r.value, r.found), required: false };
+    });
+    setWf((w) => ({ ...w, inputFields: [...w.inputFields, ...added] }));
+  };
 
   /**
    * Turn the canvas into the stored workflow. Called a moment after every change. A canvas that
@@ -965,21 +999,82 @@ function DesignerInner({ name }: { name: string | null }) {
               {(meta?.adapters ?? []).map((a: string) => <option key={a} value={a}>{a}</option>)}
             </Select>
           </label>
-          {/* The workflow's inputs: one JSON for all blocks, one section per block id. Run shows it for the values of that run. */}
-          <div className="col-span-3">
+          {/* Inputs: a field list, not a JSON box (15.121). Each field is what a run is asked for — its words, its
+              path, its type, whether a value must be given — and its value, which is the default and lives in `inputs`
+              (one place, so the two cannot drift). The JSON stays below for a value no field expresses (an object or a
+              list), which is why it is a view and not a mode. */}
+          <div className="col-span-3" data-testid="wf-inputs-block">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="label mb-0">Inputs (JSON, one section per block)<Help id="wf-inputs" /></span>
-              <Button variant="link" className="ml-auto" type="button" data-testid="wf-inputs-by-block" title="Add an empty section for every block that has none yet" onClick={() => {
-                  const cur = parseInputs(inputsText);
-                  if (!cur) return;
-                  const next: Record<string, unknown> = { ...cur };
-                  for (const n of nodes) { const id = defs[n.id]?.id; if (id && !(id in next)) next[id] = {}; }
-                  setInputsText(JSON.stringify(next, null, 2)); setWf((w) => ({ ...w, inputs: next }));
-                }}>Add a section per block</Button>
+              <span className="label mb-0">Inputs<Help id="wf-inputs" /></span>
+              {suggested.length > 0 && (
+                <Button variant="link" className="ml-auto h-auto px-0 text-2xs" type="button" data-testid="wf-inputs-adopt"
+                  title="Declare every input the prompts use and no field covers yet" onClick={adoptSuggested}>Add {suggested.length === 1 ? "the input" : `the ${suggested.length} inputs`} the prompts use</Button>
+              )}
+              <Button variant="link" className={`h-auto px-0 text-2xs ${suggested.length ? "" : "ml-auto"}`} type="button" data-testid="wf-inputs-add" onClick={addField}>Add a field</Button>
             </div>
-            <div className="mt-1"><JsonEditor testid="wf-inputs" rows={3} invalid={!inputsValid(inputsText)} title="The workflow's inputs, as a JSON object with one section per block id" value={inputsText}
-              placeholder={'{\n  "planner": { "prlink": "" },\n  "runner": {}\n}'}
-              onChange={(t) => { setInputsText(t); const v = parseInputs(t); if (v) setWf((cur) => ({ ...cur, inputs: v })); }} /></div>
+            {wf.inputFields.length === 0 ? (
+              <p data-testid="wf-inputs-empty" className="mt-1 text-xs text-slate-500">
+                No fields yet. A run is asked for these; until one is added, an input is asked for by its path.
+              </p>
+            ) : (
+              <ul data-testid="wf-input-fields" className="mt-1 space-y-2">
+                {wf.inputFields.map((raw: any, i: number) => {
+                  const f = raw as any;
+                  const parsedValues = parseInputs(inputsText);
+                  const choice = f.type === "choose-one" || f.type === "choose-many";
+                  return (
+                    <li key={i} data-testid={`wf-input-field-${i}`} data-type={f.type} className="rounded border border-slate-200 bg-slate-50 p-2">
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                        <label className="min-w-0"><span className="label">Asked as</span>
+                          <Input data-testid={`wf-field-label-${i}`} placeholder="Pull request link" value={f.label ?? ""} onChange={(e) => setField(i, { label: e.target.value })} /></label>
+                        <label className="min-w-0"><span className="label">Path</span>
+                          <Input className="mono" data-testid={`wf-field-path-${i}`} placeholder="prlink" value={f.path ?? ""} onChange={(e) => setField(i, { path: e.target.value })} /></label>
+                        <label className="min-w-0"><span className="label">Type</span>
+                          <Select className="w-full" data-testid={`wf-field-type-${i}`} value={f.type ?? "text"} onChange={(e) => setField(i, { type: e.target.value, ...(e.target.value === "choose-one" || e.target.value === "choose-many" ? { options: f.options?.length ? f.options : [{ label: "", value: "" }] } : { options: undefined }) })}>
+                            {["text", "long-text", "number", "choose-one", "choose-many", "yes-no"].map((t) => <option key={t} value={t}>{FIELD_TYPE_LABEL[t] ?? t}</option>)}
+                          </Select></label>
+                        <label className="flex items-end gap-2 pb-1.5 text-sm">
+                          <Checkbox data-testid={`wf-field-required-${i}`} checked={!!f.required} onCheckedChange={(v) => setField(i, { required: !!v })} />
+                          <span>Must be given</span>
+                        </label>
+                      </div>
+                      <label className="mt-1 block"><span className="label">Value <span className="font-normal normal-case text-slate-400">(the default a run starts with)</span></span>
+                        <FieldInput field={{ ...f, label: f.label || f.path, required: false } as any} value={getPath(parsedValues ?? {}, f.path ?? "").value}
+                          disabled={!parsedValues} stem={`wf-field-value-${i}`} onChange={(v) => setFieldValue(f.path, v)} /></label>
+                      <label className="mt-1 block"><span className="label">Note <span className="font-normal normal-case text-slate-400">(optional)</span></span>
+                        <Input data-testid={`wf-field-description-${i}`} placeholder="One line of context under the field" value={f.description ?? ""} onChange={(e) => setField(i, { description: e.target.value })} /></label>
+                      {choice && (
+                        <div className="mt-1" data-testid={`wf-field-options-${i}`}>
+                          <span className="label">Options</span>
+                          <ul className="space-y-1">
+                            {(f.options ?? []).map((o: any, j: number) => (
+                              <li key={j} className="flex items-center gap-1">
+                                <Input className="min-w-0 flex-1" data-testid={`wf-field-option-label-${i}-${j}`} placeholder="Shown as" value={o.label ?? ""} onChange={(e) => setOption(i, j, { label: e.target.value })} />
+                                <Input className="mono min-w-0 flex-1" data-testid={`wf-field-option-value-${i}-${j}`} placeholder="the value the step gets" value={typeof o.value === "string" ? o.value : JSON.stringify(o.value ?? "")} onChange={(e) => setOption(i, j, { value: e.target.value })} />
+                                <TrashButton testid={`wf-field-option-remove-${i}-${j}`} size="sm" label={`Remove option ${j + 1}`} onClick={() => setWf((w) => ({ ...w, inputFields: w.inputFields.map((x: any, k: number) => (k === i ? { ...x, options: x.options.filter((_: any, m: number) => m !== j) } : x)) }))} />
+                              </li>
+                            ))}
+                          </ul>
+                          <Button variant="link" size="sm" className="h-auto px-0 text-2xs" type="button" data-testid={`wf-field-option-add-${i}`}
+                            onClick={() => setWf((w) => ({ ...w, inputFields: w.inputFields.map((x: any, k: number) => (k === i ? { ...x, options: [...(x.options ?? []), { label: "", value: "" }] } : x)) }))}>Add an option</Button>
+                        </div>
+                      )}
+                      <div className="mt-1 flex justify-end">
+                        <TrashButton testid={`wf-field-remove-${i}`} size="sm" label={`Remove the field “${f.label || f.path || i + 1}”`}
+                          onClick={() => setWf((w) => ({ ...w, inputFields: w.inputFields.filter((_: any, k: number) => k !== i) }))} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {/* The value side, as JSON: an object or a list has no control, and this is where it is set. */}
+            <div className="mt-2">
+              <span className="label">The values as JSON<Help id="wf-inputs-json" /></span>
+              <JsonEditor testid="wf-inputs" rows={3} invalid={!inputsValid(inputsText)} title="The workflow's inputs, as a JSON object" value={inputsText}
+                placeholder={'{\n  "prlink": ""\n}'}
+                onChange={(t) => { setInputsText(t); const v = parseInputs(t); if (v) setWf((cur) => ({ ...cur, inputs: v })); }} />
+            </div>
           </div>
             </div>
             {/*
@@ -1032,10 +1127,15 @@ function DesignerInner({ name }: { name: string | null }) {
       {creating && (
         <>
           <div data-testid="new-wf-backdrop" className="fixed inset-0 z-40 bg-black/20" onClick={() => setCreating(false)} />
-          <aside data-testid="new-wf-panel" role="dialog" aria-modal="true" aria-label="New workflow" className="slide-in-right fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col overflow-auto bg-surface p-5 shadow-2xl">
+          <aside data-testid="new-wf-panel" role="dialog" aria-modal="true" aria-label="New workflow"
+            className="slide-in-right fixed inset-y-0 right-0 z-50 flex flex-col border-l border-slate-200 bg-surface shadow-2xl" style={{ width: newWfResize.width }}>
+            <PanelResizeHandle testid="new-wf-panel-resize" label="Resize the new workflow panel" resize={newWfResize} />
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">New workflow</h2>
-              <Button variant="outline" className="p-1.5" type="button" data-testid="new-wf-close" aria-label="Close" onClick={() => setCreating(false)}>✕</Button>
+              <Button variant="ghost" size="icon-sm" className="text-slate-500" type="button" data-testid="new-wf-close" aria-label="Close" title="Close (Escape)" onClick={() => setCreating(false)}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </Button>
             </div>
             <label className="mb-3 block"><span className="label">Name</span>
               <Input data-testid="new-wf-name" autoFocus  placeholder="daily-triage" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -1064,6 +1164,7 @@ function DesignerInner({ name }: { name: string | null }) {
               <Button variant="outline" data-testid="new-wf-import"  onClick={() => { setCreating(false); setImportErrors([]); setImportOpen(true); }}>Import YAML instead</Button>
             </div>
             <p className="mt-4 text-xs text-slate-500">The workflow is saved as soon as it has its first step. Its settings stay editable in the panel on the right of the designer.</p>
+            </div>
           </aside>
         </>
       )}
@@ -1097,13 +1198,17 @@ function DesignerInner({ name }: { name: string | null }) {
   );
 }
 
-function parseInputs(text: string): Record<string, unknown> | null {
-  try {
-    const v = JSON.parse(text.trim() || "{}");
-    return v && typeof v === "object" && !Array.isArray(v) ? v : null;
-  } catch { return null; }
-}
 const inputsValid = (text: string) => parseInputs(text) !== null;
+
+/** What each field type asks with, in the author's words. */
+const FIELD_TYPE_LABEL: Record<string, string> = {
+  text: "One line of text",
+  "long-text": "A longer text",
+  number: "A number",
+  "choose-one": "One of a list",
+  "choose-many": "Some of a list",
+  "yes-no": "Yes or no",
+};
 
 /** The designer side panel: default width, the narrowest it goes, and the widest as a share of the window. */
 const PANEL_DEFAULT = 384, PANEL_MIN = 320, PANEL_MAX_SHARE = 0.6;

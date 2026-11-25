@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, fake, showStep, test } from "../helpers";
+import { expect, fake, showStep, test, gotoRuns } from "../helpers";
 
 /**
  * Task 15.93: the steps of a run are tabs.
@@ -101,7 +101,7 @@ test("E15.93-2 the step tabs fit the run's narrow panel, and work there as they 
     const id = run.body.run.id;
     await expect.poll(async () => (await srv.api("GET", `/api/runs/${id}`)).body.run?.status, { timeout: 30_000 }).toBe("completed");
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`${srv.url}/#/runs`);
+    await gotoRuns(page, srv.url);
     await expect(tid(page, "sidenav")).toBeVisible();
     await page.locator(`[data-testid="run-row-${id}"]`).click();
     await expect(tid(page, "node-tabs")).toBeVisible();

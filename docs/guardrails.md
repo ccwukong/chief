@@ -157,6 +157,21 @@ the correction was not a rule yet.
 **Enforced by** `npm run guardrails` (`help-short`), cases E14.2-1 and E9.50-1, and
 `whitespace-pre-line` on the bubble in `packages/web/src/ui.tsx`.
 
+### 11. Design system consistency (tokens & buttons)
+
+Every page in `packages/web/src/` follows [docs/design-system.md](design-system.md):
+- Never use `bg-white` or arbitrary hex classes (`bg-[#…]`, `text-[#…]`, `border-[#…]`) — they break
+  dark mode and ignore the chosen shadcn base palette. Use `bg-surface`, `bg-page`, or the semantic
+  tokens in `styles.css`.
+- Never fake an inline link with `variant="ghost"` + `underline` — use `variant="link"` with
+  `className="h-auto px-0"`.
+
+**Why.** Hardcoded `bg-[#f6f7f9]` on `run-panel` and `bg-white` on workflow cards silently broke dark
+mode, and `variant="ghost"` links inherited 36 px button padding inside prose. A guardrail catches
+these regressions before they land.
+
+**Enforced by** `npm run guardrails` (`design-system`) and case E15.128-1.
+
 ## What is deliberately not a rule
 
 - **Banning `useEffect`.** Dozens of uses in the web UI, several legitimate. It needs sanctioned hooks

@@ -3,7 +3,7 @@ import { dbPath } from "../paths.ts";
 import { migrations } from "./migrations/index.ts";
 import type {
   AssistantThreadRow, EventRow, GateRow, McpServerRow, NodeRunRow, NodeRunStatus, RunRow, RunStatus,
-  MessageDirection, MessageRow, ScheduleRow, SideEffectRow, WorkflowRow, AssistantRow,
+  MessageDirection, MessageRow, ScheduleRow, InputSetRow, SideEffectRow, WorkflowRow, AssistantRow,
 } from "./types.ts";
 
 const MAX_MESSAGE_CHARS = 2_000_000;
@@ -230,10 +230,10 @@ export class Store {
   }
 
   // ── runs ────────────────────────────────────────────────────────────────
-  createRun(wf: WorkflowRow, inputs: any, budget: any, parentRunId: number | null = null, startFrom: string | null = null): RunRow {
+  createRun(wf: WorkflowRow, inputs: any, budget: any, parentRunId: number | null = null, startFrom: string | null = null, fromInputSet: { id: number; name: string } | null = null): RunRow {
     const id = this.insert(
-      "INSERT INTO run__runs (workflow_id, workflow_version, definition_json, base_dir, inputs_json, budget_json, parent_run_id, start_from, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [wf.id, wf.version, j(wf.definition), wf.base_dir, j(inputs ?? {}), j(budget ?? null), parentRunId, startFrom, now()],
+      "INSERT INTO run__runs (workflow_id, workflow_version, definition_json, base_dir, inputs_json, budget_json, parent_run_id, start_from, input_set_id, input_set_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [wf.id, wf.version, j(wf.definition), wf.base_dir, j(inputs ?? {}), j(budget ?? null), parentRunId, startFrom, fromInputSet?.id ?? null, fromInputSet?.name ?? null, now()],
     );
     return this.getRun(id)!;
   }
@@ -572,13 +572,11 @@ export class Store {
   schedules(): (ScheduleRow & { workflow_name: string })[] {
     return this.all("SELECT s.*, w.name AS workflow_name FROM workflow__schedules s JOIN workflow__definitions w ON w.id = s.workflow_id WHERE w.archived_at IS NULL ORDER BY s.id");
   }
-  /** One page of them, for the Schedules page (every list page is paged; see AGENTS.md). */
-  listSchedules(limit: number, offset: number): (ScheduleRow & { workflow_name: string; workflow_archived: number })[] {
+  /** One page of them, for the Schedules page (every list page is paged; see AGENTS.md). */  listSchedules(limit: number, offset: number): (ScheduleRow & { workflow_name: string; workflow_archived: number })[] {
     return this.all("SELECT s.*, w.name AS workflow_name, (w.archived_at IS NOT NULL) AS workflow_archived FROM workflow__schedules s JOIN workflow__definitions w ON w.id = s.workflow_id ORDER BY s.id LIMIT ? OFFSET ?", [limit, offset]);
   }
   countSchedules(): number { return (this.one("SELECT COUNT(*) AS n FROM workflow__schedules") as { n: number }).n; }
-  removeSchedule(id: number): boolean { return this.db.run("DELETE FROM workflow__schedules WHERE id = ?", [id]).changes > 0; }
-  setScheduleEnabled(id: number, enabled: boolean) { this.db.run("UPDATE workflow__schedules SET enabled = ? WHERE id = ?", [enabled ? 1 : 0, id]); }
+  removeSchedule(id: number): boolean { return this.db.run("DELETE FROM workflow__schedules WHERE id = ?", [id]).changes > 0; }  setScheduleEnabled(id: number, enabled: boolean) { this.db.run("UPDATE workflow__schedules SET enabled = ? WHERE id = ?", [enabled ? 1 : 0, id]); }
   /** Change what a schedule runs on: its expression, its inputs, whether it fires. Only the given fields. */
   updateSchedule(id: number, patch: { cron?: string; inputs?: any; enabled?: boolean }) {
     if (patch.cron !== undefined) this.db.run("UPDATE workflow__schedules SET cron = ? WHERE id = ?", [patch.cron, id]);
@@ -590,4 +588,42 @@ export class Store {
     return this.one("SELECT s.*, w.name AS workflow_name FROM workflow__schedules s JOIN workflow__definitions w ON w.id = s.workflow_id WHERE s.id = ?", [id]) ?? undefined;
   }
   touchSchedule(id: number, at: string) { this.db.run("UPDATE workflow__schedules SET last_run_at = ? WHERE id = ?", [at, id]); }
+
+  // ── input data sets: input values prepared over days, used when a run is started (15.122) ───────
+  /** An input data set of this workflow with that name, or undefined: names are unique within a workflow. */
+  inputSetNamed(workflowId: number, name: string): InputSetRow | undefined {
+    return this.one("SELECT * FROM input_set__sets WHERE workflow_id = ? AND name = ?", [workflowId, name]) ?? undefined;
+  }
+  addInputSet(workflowId: number, name: string, values: any): InputSetRow {
+    const at = now();
+    const id = this.insert("INSERT INTO input_set__sets (workflow_id, name, values_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [workflowId, name, j(values), at, at]);
+    return this.getInputSet(id)!;
+  }
+  getInputSet(id: number): InputSetRow | null { return this.one("SELECT * FROM input_set__sets WHERE id = ?", [id]); }
+  /** One input data set with its workflow's name, or undefined. */
+  inputSetWithWorkflow(id: number): (InputSetRow & { workflow_name: string; workflow_archived: number }) | undefined {
+    return this.one("SELECT s.*, w.name AS workflow_name, (w.archived_at IS NOT NULL) AS workflow_archived FROM input_set__sets s JOIN workflow__definitions w ON w.id = s.workflow_id WHERE s.id = ?", [id]) ?? undefined;
+  }
+  /**
+   * A page of them, the one prepared most recently first: an input data set is worked on over days, so that is the one
+   * someone came back for. Optionally only those of one workflow.
+   */
+  listInputSets(limit: number, offset: number, workflowId?: number): (InputSetRow & { workflow_name: string; workflow_archived: number })[] {
+    const cols = "s.*, w.name AS workflow_name, (w.archived_at IS NOT NULL) AS workflow_archived";
+    return workflowId == null
+      ? this.all(`SELECT ${cols} FROM input_set__sets s JOIN workflow__definitions w ON w.id = s.workflow_id ORDER BY s.updated_at DESC, s.id DESC LIMIT ? OFFSET ?`, [limit, offset])
+      : this.all(`SELECT ${cols} FROM input_set__sets s JOIN workflow__definitions w ON w.id = s.workflow_id WHERE s.workflow_id = ? ORDER BY s.updated_at DESC, s.id DESC LIMIT ? OFFSET ?`, [workflowId, limit, offset]);
+  }
+  countInputSets(workflowId?: number): number {
+    return (workflowId == null
+      ? this.one("SELECT COUNT(*) AS n FROM input_set__sets") as { n: number }
+      : this.one("SELECT COUNT(*) AS n FROM input_set__sets WHERE workflow_id = ?", [workflowId]) as { n: number }).n;
+  }
+  /** Change a name or its values. Only the given ones, and the time it was last prepared always moves. */
+  updateInputSet(id: number, patch: { name?: string; values?: any }) {
+    if (patch.name !== undefined) this.db.run("UPDATE input_set__sets SET name = ?, updated_at = ? WHERE id = ?", [patch.name, now(), id]);
+    if (patch.values !== undefined) this.db.run("UPDATE input_set__sets SET values_json = ?, updated_at = ? WHERE id = ?", [j(patch.values), now(), id]);
+    if (patch.name === undefined && patch.values === undefined) this.db.run("UPDATE input_set__sets SET updated_at = ? WHERE id = ?", [now(), id]);
+  }
+  removeInputSet(id: number): boolean { return this.db.run("DELETE FROM input_set__sets WHERE id = ?", [id]).changes > 0; }
 }
