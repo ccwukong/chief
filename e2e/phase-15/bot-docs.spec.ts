@@ -60,7 +60,9 @@ test("E15.118-1 the chief bot design document names only things that exist, and 
   }
 
   // The one claim that explains the rest of the design is checkable: a follow-up continues the CLI's session.
-  expect(doc).toMatch(/one run of\n?an agent CLI|one run of an agent CLI/);
+  // The document is wrapped by hand, so the line break is not part of the claim (found when 15.119–15.121 ran the
+  // suite: this case had been written and never run, and its pattern assumed the break fell in one particular place).
+  expect(doc).toMatch(/one run\s+of an agent CLI/);
   expect(code("packages/chief/src/ask.ts")).toContain("resumeSessionId");
   // And the table that decides when it is safe to continue one.
   for (const condition of ["fingerprint", "canonical(", "lastEventId", "countRuns", "retired"]) {

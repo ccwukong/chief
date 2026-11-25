@@ -32,6 +32,8 @@ export interface RunRow {
   requested_action: "pause" | "cancel" | null; owner_pid: number | null; parent_run_id: number | null;
   /** The step a partial rerun of another run starts at; null for an ordinary run (see 010-run-start-from). */
   start_from: string | null;
+  /** The input data set this run was started from, and its name as it was then — it can be renamed or deleted later. */
+  input_set_id: number | null; input_set_name: string | null;
   tokens_in: number; tokens_out: number; cost_usd: number; error: string | null;
   created_at: string; started_at: string | null; finished_at: string | null;
 }
@@ -71,6 +73,9 @@ export interface McpServerRow { name: string; adapter: string; folder: string; s
 export interface ScheduleRow {
   id: number; workflow_id: number; cron: string; enabled: number; inputs: any; last_run_at: string | null; created_at: string;
 }
+
+/** An input data set: one named set of input values for one workflow, prepared over days and used when a run starts (15.122). */
+export interface InputSetRow { id: number; workflow_id: number; name: string; values: any; created_at: string; updated_at: string }
 
 /** One row of the assistant's conversation (task 9.64): a question, the exact prompt sent, or an answer. */
 /**

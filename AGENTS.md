@@ -99,8 +99,8 @@ Work proceeds phase by phase, in the order of `docs/dev-plan.md` §7.
   second database file, no attached database, no browser storage, no side files for state. No queue,
   broker, ORM or extra service.
 - **One schema per feature.** Every table and index is named `<schema>__<name>`, where the schema
-  is the feature it belongs to (`workflow`, `run`, `agent`, `system`, `draft` today; see dev plan
-  §4). A new feature joins an existing schema or adds a new one in a migration.
+  is the feature it belongs to (`workflow`, `input_set`, `run`, `agent`, `assistant`, `system`, `draft`
+  today; see dev plan §4). A new feature joins an existing schema or adds a new one in a migration.
 - **Raw SQL with numbered migrations** in `packages/chief/src/store/migrations/`; never edit a
   migration that has been applied.
 - **`node:sqlite` is imported only by the store** (`packages/chief/src/store/`).
@@ -120,7 +120,8 @@ Work proceeds phase by phase, in the order of `docs/dev-plan.md` §7.
   lint on every push and pull request, and the e2e suite on a pull request or by hand (a merge onto
   `main` need not re-run what the pull request already proved). A warning is a failure.
 - **The rules above are enforced, not requested.** [docs/guardrails.md](docs/guardrails.md) lists every
-  rule with its reason and its fix. `npm run check` runs typecheck, ESLint and
+  rule with its reason and its fix, and [docs/design-system.md](docs/design-system.md) is the UI/UX
+  design system standard (layout, side panels, button taxonomy, theme tokens) for every page. `npm run check` runs typecheck, ESLint and
   `scripts/guardrails.mjs`; CI runs the same three on every push and pull request. Nothing in the
   enforcement depends on an editor or an agent tool: `scripts/guardrails.mjs` needs only Node, and
   `CLAUDE.md` points here for Claude Code. If a correction has to be remembered, it is not yet a rule:
@@ -150,6 +151,26 @@ Work proceeds phase by phase, in the order of `docs/dev-plan.md` §7.
   the workflow as soon as they form a valid one; settings save per field. Do not add a Save,
   Apply or Validate button. Buttons are for actions (Run, Start run, answering a gate, Import,
   Revert) and for the one security confirmation (approving wider sandbox permissions).
+
+  **One exception, asked for on 2026-11-25: creating a new thing is an explicit act.** A panel that
+  is a *form not yet stored* has **Save** as its one button (`Save data set` today); a panel opened on
+  an existing row has **Start run** and its edits save themselves. The line is whether a row exists
+  yet — a change to something that exists still saves itself, a thing that does not exist is created
+  when its form is saved. Do not spread this to edits: asked in the same message, so that a new form
+  is not a set before it is saved, and an existing one keeps the rule above.
+- **Adding something to a listing is a right side panel.** A name, the fields it needs, and one action
+  at the foot — `slide-in-right`, a backdrop, Escape to close, the dialog role and `aria-modal`, exactly as
+  the designer's **New workflow** panel does. The same panel is the edit of that thing, so there is one
+  component rather than a create dialog and an edit form. It saves itself as it is typed (debounced, and
+  **only once something has changed**, so opening a blank panel creates nothing), and the state line says
+  *Saved*, *Saving…* or what is still needed. This is what the input data set panel is (`packages/web/src/
+  input-sets.tsx`, 15.125), and it is the shape every future "New …" that lands in a list should take.
+  Every right side-panel is also **horizontally resizable** via `useRightPanelResize` and `PanelResizeHandle`
+  from `packages/web/src/ui.tsx` (15.126): a left-edge drag handle, arrow-key resize, double-click reset,
+  width stored in SQLite drafts, and clamped to the viewport so 375 px never scrolls sideways.
+  Asked 2026-11-25: *"make the create collection form/json as a side panel as the designer page for creating
+  a new work flow? and make this as the design standard. as long as there's any new item creation that will
+  be added to a listing, use the right side-panel design approach"*.
 - **Autosave must not multiply things.** A new workflow version starts only once the current one
   has been run, never for a move or a rename; typing a name renames; nothing is created on disk
   while a path is being typed.

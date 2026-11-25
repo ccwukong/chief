@@ -8,7 +8,7 @@ import { JsonCode } from "../json-editor";
 import { Replay } from "./replay";
 import { ModelSelect } from "../designer/panel";
 import { RunDiagram } from "../run-diagram";
-import { mergeInputs } from "../run-inputs";
+import { describeInputsOf, getPath, mergeInputs } from "../run-inputs";
 import { usePolling, useReveal } from "../polling";
 import { Button } from "../components/ui/button";
 import { Select } from "../components/ui/select";
@@ -275,6 +275,8 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
 
   /** The inputs the run ran with: its own values over the workflow's defaults. */
   const usedInputs = mergeInputs(run.definition?.inputs, run.inputs);
+  /** The same inputs as the form a person filled in: labelled and typed, so the record reads like what was asked (15.121). */
+  const usedFields = describeInputsOf(run.definition);
   /** Open a step's row from the diagram: its latest attempt, or its entry under "Not started yet". */
   const openStep = (nodeId: string) => {
     const latest = roots.filter((n: any) => n.node_id === nodeId && n.phase === "forward").sort((a: any, b: any) => b.id - a.id)[0];
@@ -351,7 +353,7 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
               : MODEL_AUTH_ERROR.test(n.error ?? "")
                 ? "This step's model or account was refused — a step left on the CLI's default model uses whatever that CLI is configured with, and that can need an account this machine is not signed in to. "
                 : "This step failed. "}
-            <Button variant="ghost" className="text-primary underline" type="button" onClick={() => setOpen(n.id)}>Change its model</Button>, then press Resume: only this step and the ones after it run again.
+            <Button variant="link" className="h-auto px-0 underline" type="button" onClick={() => setOpen(n.id)}>Change its model</Button>, then press Resume: only this step and the ones after it run again.
           </div>
         )}
         {gatesOf(n.id).map((g: any) => (
@@ -386,7 +388,7 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
 
   return (
     <div className={panel ? "px-5 py-4" : "page-width py-6"} data-testid={panel ? "run-panel-body" : "page-column"}>
-      {!panel && <a href="#/runs" className="text-sm text-primary underline">← All runs</a>}
+      {!panel && <a href="#/runs?tab=runs" className="text-sm text-primary underline">← All runs</a>}
       <div className="mb-4 mt-2 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold" data-testid="run-title">Run #{run.id} · {run.workflow_name} v{run.workflow_version}</h1>
         <Status value={s} testid="run-status" />
@@ -433,7 +435,7 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
           {/* A revert in flight has no actions: the run is being undone and every button would either race it or lie. */}
           {s === "reverting" && <span className="self-center text-sm text-slate-500" data-testid="run-reverting">Undoing this run's side effects…</span>}
         </div>
-        {confirmDelete && <ConfirmDeleteRuns ids={[run.id]} onClose={() => setConfirmDelete(false)} onDone={() => go("/runs")} />}
+        {confirmDelete && <ConfirmDeleteRuns ids={[run.id]} onClose={() => setConfirmDelete(false)} onDone={() => go("/runs?tab=runs")} />}
       </div>
       <ErrorBox error={error ?? (run.error && s === "failed" ? run.error : null)} testid="run-error" />
 
@@ -456,9 +458,33 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
       )}
 
       {Object.keys(usedInputs).length > 0 && (
-        <Card asChild className="mb-5 py-2"><details data-testid="run-inputs">
-          <summary className="cursor-pointer text-xs font-semibold uppercase text-slate-500">Inputs this run ran with</summary>
-          <div className="mt-2"><JsonCode testid="run-inputs-json" maxRows={12} value={JSON.stringify(usedInputs, null, 2)} /></div>
+        <Card asChild className="mb-5 py-2"><details data-testid="run-inputs" open={run.input_set_name ? true : undefined}>
+          <summary className="cursor-pointer text-xs font-semibold uppercase text-slate-500">
+            Inputs this run ran with
+            {/* Which input data set it was prepared as, if any: it can be renamed or deleted afterwards, so the name is the
+                one recorded at the start (15.122). */}
+            {run.input_set_name && <span data-testid="run-input-set" className="ml-2 font-normal normal-case text-slate-500">— prepared as “{run.input_set_name}”</span>}
+          </summary>
+          {/* Read as the form that asked for them — the label, the value, and the path in small mono — so the
+              record makes sense to the person who started the run; the JSON stays for the exact object. */}
+          <ul data-testid="run-inputs-form" className="mt-2 space-y-1.5">
+            {usedFields.map((f) => {
+              const r = getPath(usedInputs, f.path);
+              return (
+                <li key={f.path} data-testid={`run-input-${f.path}`} data-type={f.type} className="flex flex-wrap items-baseline gap-x-2 border-b border-slate-100 pb-1 text-sm last:border-0">
+                  <span className="font-medium">{f.label}</span>
+                  <code className="mono text-2xs text-slate-400">{`{{inputs.${f.path}}}`}</code>
+                  <span className={`ml-auto min-w-0 [overflow-wrap:anywhere] ${r.found && r.value !== "" ? "text-slate-700" : "text-slate-400"}`}>
+                    {f.type === "yes-no" ? (r.value === true ? "yes" : "no") : !r.found ? "not given" : r.value === "" ? "empty" : typeof r.value === "string" ? r.value : JSON.stringify(r.value)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <details data-testid="run-inputs-json-view" className="mt-2">
+            <summary className="cursor-pointer text-xs text-slate-500">The JSON</summary>
+            <div className="mt-1"><JsonCode testid="run-inputs-json" maxRows={12} value={JSON.stringify(usedInputs, null, 2)} /></div>
+          </details>
         </details></Card>
       )}
       <RunDiagram definition={run.definition} nodeRuns={d.node_runs} workflow={run.workflow_name} onOpen={openStep} />

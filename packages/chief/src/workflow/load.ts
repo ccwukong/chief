@@ -1,5 +1,5 @@
 import YAML from "yaml";
-import { collectRefs, TemplateError, type TemplateRef } from "./template.ts";
+import { collectRefs, lookup, TemplateError, type TemplateRef } from "./template.ts";
 import { checkShorthand, workflowSchema, type Workflow, type WorkflowNode } from "./schema.ts";
 
 export interface ValidationResult { ok: boolean; errors: string[]; warnings: string[]; workflow?: Workflow }
@@ -137,6 +137,30 @@ function contractWarnings(wf: Workflow): string[] {
   return [...out];
 }
 
+/** A declaration that contradicts itself (15.119): every rule here is one a person could not satisfy at run time. */
+function checkInputFields(wf: Workflow, errors: string[]) {
+  const list = (wf as any)["input-fields"] as any[] | undefined;
+  if (!list?.length) return;
+  const seen = new Set<string>();
+  for (const f of list) {
+    const at = `input-fields: "${f.path}"`;
+    if (seen.has(f.path)) errors.push(`${at}: declared twice`);
+    seen.add(f.path);
+    const r = lookup(wf.inputs ?? {}, String(f.path).split("."));
+    // A default is a value the run always has, so asking for a value and having one cannot both be true.
+    if (f.required && r.found && r.value !== "") errors.push(`${at}: \`required\` with a default (inputs.${f.path}) says two things: it is given when the run starts, and it is not. Remove one`);
+    const choice = f.type === "choose-one" || f.type === "choose-many";
+    if (choice) {
+      if (!f.options?.length) errors.push(`${at}: a ${f.type} field needs \`options\` to choose from`);
+      for (const [i, o] of (f.options ?? []).entries()) {
+        if (!o || typeof o !== "object" || !("value" in o)) errors.push(`${at}: option ${i + 1} has no \`value\` (what the step receives when it is picked)`);
+      }
+    } else if (f.options) errors.push(`${at}: \`options\` only belongs on a choose-one or choose-many field`);
+    // A value that is not a text is not asked for in a text box: the type would be a lie.
+    if (r.found && r.value !== "" && typeof r.value === "object" && r.value !== null) errors.push(`${at}: the default is an object or a list, which no ${f.type} field can hold; leave the field undeclared (it is then edited as JSON)`);
+  }
+}
+
 /** Schema + graph + template validation. Environment-dependent checks (MCP servers, sandbox paths) live in the engine. */
 export function validateWorkflow(raw: unknown): ValidationResult {
   const errors: string[] = [];
@@ -189,6 +213,7 @@ export function validateWorkflow(raw: unknown): ValidationResult {
   if (!errors.length) {
     try { topoOrder(wf); } catch (e: any) { errors.push(e.message); }
   }
+  if (!errors.length) checkInputFields(wf, errors);
   if (!errors.length) {
     for (const n of wf.nodes) {
       checkNodeTemplates(n, wf, n.id, false, errors);

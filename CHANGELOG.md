@@ -8,6 +8,36 @@ landing page and the release notes take it from the same place.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-25
+
+### Added
+
+- **Declared run inputs (`input-fields`) and a Form | JSON switch.** Workflows can describe their inputs
+  with labels, types (`text`, `long-text`, `number`, `choose-one`, `choose-many`, `yes-no`), descriptions
+  and required flags in the designer's Workflow tab (and YAML). Runs and schedules ask for inputs as a
+  labelled form with a **Form | JSON** switch over the same value, and the run page renders inputs in the
+  same readable form.
+- **Reusable workflow input data sets on the Runs page.** The Runs page now has a collapsible
+  **Workflows** column on the left and two tabs: **Input data** (default) and **Runs**. Named input data
+  sets can be prepared over time in a right side-panel — new forms save explicitly with **Save data set**,
+  while edits to existing sets save themselves and start runs with **Start run**.
+- **First-run starter workflow (`trip-planner`) and sample input data set.** On a fresh install, chief
+  seeds a zero-MCP, 3-step sample workflow (`brainstorm` → interactive `ask` gate → `itinerary`) with
+  declared input fields and a ready-to-run sample input data set so new users can explore Runs, the
+  Form | JSON side-panel, human gates, and the Designer immediately. Seeded once; deleting it never
+  brings it back.
+- **Horizontally resizable right side-panels on every page.** The input data set panel, the designer's
+  new workflow panel, the run detail panel, and the designer's side panel all support dragging the left
+  edge, arrow-key resizing, double-click reset, and width persistence across reloads.
+
+### Fixed
+
+- **Dark mode and cross-page design-system consistency.** Replaced hardcoded light-mode surfaces on the
+  run detail panel (`bg-page`) and workflow cards (`bg-surface`), fixed the collapsed workflow strip at
+  tablet widths (`768–1023 px`), removed double horizontal padding on Schedules, unified the New workflow
+  panel's close button, and converted inline text-link buttons to `variant="link"`, backed by a new
+  `docs/design-system.md` standard and automated guardrail.
+
 ## [0.3.1] — 2026-11-23
 
 ### Fixed

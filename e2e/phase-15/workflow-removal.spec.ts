@@ -40,7 +40,9 @@ test("E15.2-1 a workflow with no runs is deleted, with a confirmation that names
     // Gone from the server, and the page is not left standing on a workflow that no longer exists: deleting the open one
     // lands on the runs list (the designer has nothing to show), where it is not offered either.
     await expect.poll(async () => (await srv.api("GET", "/api/workflows")).body.map((w: any) => w.name)).toEqual(["keeper"]);
-    await expect(page.locator('[data-testid="new-run-workflow"] option')).toHaveCount(1);
+    // The workflow panel is the list a workflow is chosen from now (15.125): one remains.
+    await expect(page.locator('[data-testid^="workflow-panel-"]:not([data-testid="workflow-panel-all"]):not([data-testid="workflow-panel-manage"]):not([data-testid="workflow-panel-new"])')).toHaveCount(1);
+    await expect(tid(page, "workflow-panel-keeper")).toBeVisible();
     // Nor in the designer's picker, which is where a workflow is chosen at all.
     await page.goto(`${srv.url}/#/designer`);
     await expect(page.locator('[data-testid="wf-picker"] > option')).toHaveCount(2); // the placeholder and keeper

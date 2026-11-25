@@ -101,6 +101,8 @@ export const test = base.extend<{ chief: Chief }>({
       CHIEF_NOTIFY_LOG: join(base, "notify.log"),
       // The MCP list is re-asked until it has settled; tests do not need to wait half a second each time.
       CHIEF_MCP_POLL_MS: "40",
+      // Existing tests expect a fresh empty database; E15.127-1 unsets this to test first-run seeding.
+      CHIEF_NO_SEED: "1",
     };
     // Node warns on stderr when NO_COLOR and FORCE_COLOR are both set: the harness's own colour
     // settings must not reach the product's output (case E9.9-3 compares chief's stderr exactly).
@@ -187,4 +189,26 @@ export async function roomyLayout(srv: Server) {
   await srv.api("PUT", "/api/drafts/" + encodeURIComponent("ui:designer-panel-open"), { value: { compact: true, wide: true }, seq: 1 });
   await srv.api("PUT", "/api/drafts/" + encodeURIComponent("ui:designer-blocks-open"), { value: { compact: true, wide: true }, seq: 1 });
   await srv.api("PUT", "/api/drafts/" + encodeURIComponent("ui:designer-sidenav-open"), { value: true, seq: 1 });
+}
+
+/**
+ * Go to the Runs page **on its runs list**. The page opens on Collections (15.126), so a case about a run's row, the
+ * run panel or the run pager says which tab it means rather than relying on the default.
+ */
+export async function gotoRuns(page: import("@playwright/test").Page, url: string) {
+  // `url` may be the server's origin with no hash at all, so the hash is built rather than replaced.
+  await page.goto(`${url.split("#")[0]}/#/runs?tab=runs`);
+}
+
+/**
+ * Open the input data set panel on the Runs page, from whichever tab is showing.
+ *
+ * The page opens on Input data, but a hash navigation does not reload the document — so a case that has been to the
+ * Runs tab and comes back with `page.goto` finds the tab it left (15.126). Clicking the tab first is idempotent and
+ * says what the case needs.
+ */
+export async function openInputSetPanel(page: Page) {
+  const collections = page.getByTestId("runs-tab-input-sets");
+  if (await collections.count()) await collections.click();
+  await page.getByTestId("new-run-new").click();
 }

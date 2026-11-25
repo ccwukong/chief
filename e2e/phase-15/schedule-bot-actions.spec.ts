@@ -88,7 +88,7 @@ test("E15.106-1 chief bot creates a schedule with the inputs in a sentence, chan
     await expect(tid(page, "schedule-row-2")).toBeVisible();
     await expect(tid(page, "schedule-id-2")).toHaveText("#2");
     await expect(tid(page, "schedule-cron-2")).toHaveValue("0 10 * * 1-5");
-    await expect(tid(page, "schedule-inputs-2")).toHaveValue('{"team":"payments"}');
+    await expect(tid(page, "schedule-inputs-summary-2")).toHaveText("team: payments");
     await page.goto(`${srv.url}/#/runs`);
     await tid(page, "nav-assistant").click();
     await expect(tid(page, "assistant-panel")).toBeVisible();

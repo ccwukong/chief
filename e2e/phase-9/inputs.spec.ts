@@ -54,7 +54,11 @@ edges: [fetch -> review]
   const s = await chief.serve();
   try {
     const w = await s.api("GET", "/api/workflows/review");
-    expect(w.body.input_refs).toEqual([{ path: "params.prlink", has_default: false }, { path: "params.repo", has_default: true, default: "my-org/app" }]);
+    // Each input is labelled and typed: an undeclared one by its path, and `declared` says which is which (15.119).
+    expect(w.body.input_refs).toEqual([
+      { path: "params.prlink", has_default: false, label: "params.prlink", type: "text", required: false, declared: false },
+      { path: "params.repo", has_default: true, default: "my-org/app", label: "params.repo", type: "text", required: false, declared: false },
+    ]);
 
     const bad = await s.api("POST", "/api/runs", { workflow: "review" });
     expect(bad.status).toBe(400);

@@ -302,7 +302,7 @@ test("E9.65-1 asked with the canvas, the assistant returns a checked workflow as
     const rows = Object.fromEntries((await s.api("GET", "/api/doctor")).body.db.schemas.assistant.map((t: any) => [t.table, t.rows]));
     expect(rows.messages, "the answers, the prompts and the change records, once each").toBe(7 + 7 + 10);
     expect((await s.api("POST", "/api/assistant", { question: "hi", workflow: { definition: "nope" } })).status).toBe(400);
-    expect((await s.api("GET", "/api/meta")).body.api).toBe(14);
+    expect((await s.api("GET", "/api/meta")).body.api).toBe(16);
   } finally { await s.stop(); }
 });
 

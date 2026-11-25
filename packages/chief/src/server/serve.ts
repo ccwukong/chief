@@ -11,6 +11,7 @@ import { dbPath, defaultWorkspace } from "../paths.ts";
 import type { Store } from "../store/store.ts";
 import { createApp, diskAssets, type WebAssets } from "./app.ts";
 import { detectProviders } from "../providers.ts";
+import { seedStarterWorkflow } from "../workflow/starter.ts";
 import { startScheduler } from "./scheduler.ts";
 
 async function loadAssets(): Promise<WebAssets | null> {
@@ -78,6 +79,7 @@ export async function serve(store: Store, port: number, opts: { open?: boolean }
   };
   for (const id of recover(store)) log(`run ${id} was interrupted by a previous exit; resume it from the Runs page or with: chief resume ${id}`);
   store.pruneDrafts();
+  if (seedStarterWorkflow(store)) log("seeded sample workflow trip-planner (edit, run, or delete it anytime)");
   // Which agent CLIs are there, so the app can say so on its first page rather than at the first run
   // (task 15.15). In the background: a CLI that hangs on `--version` must not hold the server up.
   void detectProviders(store).then((ps) => {

@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, fake, ROOT_DIR, test } from "../helpers";
 
-const SCHEMAS = ["agent", "assistant", "draft", "run", "system", "workflow"];
+const SCHEMAS = ["agent", "assistant", "collection", "draft", "run", "system", "workflow"];
 const sqlite = (db: string, sql: string) => {
   const r = spawnSync("/usr/bin/sqlite3", [db, sql], { encoding: "utf8" });
   expect(r.status, r.stderr).toBe(0);
@@ -39,7 +39,7 @@ edges: [a -> s, s -> g]
   const db = join(chief.home, "chief.db");
   const tables = sqlite(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").split("\n");
   expect(tables).toEqual([
-    "agent__mcp_reads", "agent__mcp_servers", "assistant__messages", "assistant__threads", "draft__entries",
+    "agent__mcp_reads", "agent__mcp_servers", "assistant__messages", "assistant__threads", "collection__collections", "draft__entries",
     "run__events", "run__gates", "run__messages", "run__node_runs", "run__runs", "run__side_effects",
     "system__migrations", "system__settings",
     "workflow__definitions", "workflow__schedules", "workflow__script_approvals",
@@ -53,8 +53,10 @@ edges: [a -> s, s -> g]
   expect(Object.keys(doc.db.schemas).sort()).toEqual(SCHEMAS);
   expect(doc.db.schemas.run.map((t: any) => t.table)).toEqual(["events", "gates", "messages", "node_runs", "runs", "side_effects"]);
   expect(doc.db.schemas.workflow).toEqual([{ table: "definitions", rows: 1 }, { table: "schedules", rows: 1 }, { table: "script_approvals", rows: 1 }]);
+  // A collection is a schema of its own (15.122): it outlives the draft that produced it and is not part of a run.
+  expect(doc.db.schemas.collection).toEqual([{ table: "collections", rows: 0 }]);
   expect(doc.db.schemas.run.find((t: any) => t.table === "runs").rows).toBe(1);
-  expect(chief.run(["doctor"]).stdout).toMatch(/schemas\s+agent \(2\), assistant \(2\), draft \(1\), run \(6\), system \(2\), workflow \(3\)/);
+  expect(chief.run(["doctor"]).stdout).toMatch(/schemas\s+agent \(2\), assistant \(2\), collection \(1\), draft \(1\), run \(6\), system \(2\), workflow \(3\)/);
 
   // The store is the only code that imports SQLite, and it names every table with its schema. The rule is
   // about importing, not about the words in a comment: `node-warnings.ts` mentions the module to filter
@@ -104,6 +106,40 @@ test("E9.6-4 a database from before the schemas is migrated in place with its da
   expect(again.code, again.stdout + again.stderr).toBe(0);
   expect(again.json().run).toMatchObject({ id: 2, status: "completed", workflow_version: 4 });
   // Relations between the renamed tables still hold.
+  expect(sqlite(db, "PRAGMA foreign_key_check")).toBe("");
+});
+
+test("E15.125-1 a database left with a stray index still migrates, and the app starts", ({ chief }) => {
+  // Reported 2026-11-25, from the maintainer's own terminal: every start died with
+  // `index input_set__sets_workflow already exists`, so the app could not open at all. The index had the name the
+  // migration was about to create, and `CREATE INDEX` cannot tolerate that (SQLite has no `IF NOT EXISTS` for it).
+  //
+  // The state is built here exactly as it was found: a database with "collections" in the schema, and an index already
+  // called `input_set__sets_workflow`, on the old table.
+  const dir = join(ROOT_DIR, "packages/chief/src/store/migrations");
+  const db = join(chief.home, "chief.db");
+  const t = "2026-11-24T00:00:00.000Z";
+  const upTo12 = MIGRATIONS.filter((f) => Number(f.slice(0, 3)) <= 12);
+  expect(upTo12).toHaveLength(12);
+  sqlite(db, [
+    "CREATE TABLE system__migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL);",
+    ...upTo12.map((f) => readFileSync(join(dir, f), "utf8")),
+    `INSERT INTO system__migrations VALUES ${upTo12.map((f, i) => `(${i + 1}, '${f.replace(/\.sql$/, "")}', '${t}')`).join(", ")};`,
+    `INSERT INTO workflow__definitions (name, version, definition_json, created_at, updated_at) VALUES ('kept-flow', 1, '{"name":"kept-flow","inputs":{},"nodes":[{"id":"a","type":"agent","prompt":"hi"}],"edges":[]}', '${t}', '${t}');`,
+    `INSERT INTO collection__collections (workflow_id, name, values_json, created_at, updated_at) VALUES (1, 'kept', '{"who":"team"}', '${t}', '${t}');`,
+    // The debris: the new name on the old table.
+    "DROP INDEX collection__collections_workflow;",
+    "CREATE INDEX input_set__sets_workflow ON collection__collections(workflow_id);",
+  ].join("\n"));
+
+  // Starting chief migrates it instead of dying in the constructor.
+  const doc = chief.run(["doctor", "--json"]);
+  expect(doc.code, doc.stdout + doc.stderr).toBe(0);
+  expect(doc.json().db).toMatchObject({ migrations: MIGRATIONS.length, latest: LATEST });
+  // The one set it held is still there under the new name, and the index sits on the table it names.
+  expect(sqlite(db, "SELECT name FROM input_set__sets"), "the set it held survived").toBe("kept");
+  expect(sqlite(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%input_set%'")).toBe("input_set__sets");
+  expect(sqlite(db, "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = 'input_set__sets_workflow'")).toBe("input_set__sets");
   expect(sqlite(db, "PRAGMA foreign_key_check")).toBe("");
 });
 

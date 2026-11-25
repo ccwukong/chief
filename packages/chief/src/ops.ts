@@ -14,7 +14,8 @@ import { TERMINAL_RUN, type WorkflowRow } from "./store/types.ts";
 import { executableNodes, parseText, validateWorkflow } from "./workflow/load.ts";
 import type { Workflow } from "./workflow/schema.ts";
 import { estimateTokens } from "./workflow/template.ts";
-import { mergeInputs, missingInputs, missingInputsMessage } from "./workflow/inputs.ts";
+import { mergeInputs, missingInputs, missingInputsMessage, missingRequired, requiredFieldsMessage, describeInputs } from "./workflow/inputs.ts";
+import { lookup } from "./workflow/template.ts";
 import { parseCron } from "./util/cron.ts";
 
 /** Operations shared by the CLI and the HTTP server. */
@@ -265,6 +266,8 @@ export function checkSchedule(store: Store, workflowName: string, cron: string, 
   try { parseCron(cron); } catch (e: any) { throw new EngineError(`invalid cron expression: ${e.message}`); }
   // A schedule whose runs would be refused for a missing input is refused now, while someone is there to read it.
   const merged = mergeInputs(wf.definition.inputs, inputs);
+  const required = missingRequired(wf.definition, merged);
+  if (required.length) throw new EngineError(requiredFieldsMessage(`schedule "${wf.name}"`, required));
   const missing = missingInputs(wf.definition, merged);
   if (missing.length) throw new EngineError(missingInputsMessage(`schedule "${wf.name}"`, missing, merged));
   return { wf, cron: cron.trim().split(/\s+/).join(" ") };
@@ -273,6 +276,93 @@ export function checkSchedule(store: Store, workflowName: string, cron: string, 
 export function addSchedule(store: Store, workflowName: string, cron: string, inputs: Record<string, unknown> = {}) {
   const checked = checkSchedule(store, workflowName, cron, inputs);
   return store.addSchedule(checked.wf.id, checked.cron, inputs);
+}
+
+// ── input data sets: input values prepared over days, used when a run is started (15.122) ──────
+
+/**
+ * Whether an input data set can start, and what is missing if it cannot: the **same** two rules `startRun` applies,
+ * read against the merged inputs, so one cannot be offered as ready and then refused on the click. Shared by the list,
+ * the editor and the start, so what the page shows and what the engine does cannot disagree.
+ */
+export function readiness(wf: { definition: any }, values: Record<string, unknown>) {
+  const merged = mergeInputs(wf.definition?.inputs, values);
+  const required = missingRequired(wf.definition, merged);
+  const missing = missingInputs(wf.definition, merged);
+  const fields = describeInputs(wf.definition);
+  return {
+    ready: required.length === 0 && missing.length === 0,
+    missingRequired: required.map((f) => ({ path: f.path, label: f.label })),
+    missing: missing,
+    /** How many of the fields the page asks for are answered **by this set**: what a person has filled in so far. A
+     *  workflow's own default is not counted — it is not something anybody prepared, and a new set starts empty. */
+    fields: fields.length,
+    filled: fields.filter((f) => { const r = lookup(isObject(values) ? values : {}, f.path.split(".")); return r.found && r.value !== "" && r.value != null; }).length,
+  };
+}
+
+/** A name for an input data set: only trimmed — it is a person's words, not an id. */
+function inputSetName(name: unknown): string {
+  const n = typeof name === "string" ? name.trim().replace(/\s+/g, " ") : "";
+  if (n.length > 120) throw new EngineError("an input data set's name is at most 120 characters");
+  return n;
+}
+
+/**
+ * A name for a set whose own name is empty: the workflow and the day. This is **the server's** job, not the page's,
+ * because the name has to be unique within the workflow and only the server can see what is taken — a page that guessed
+ * it made two sets with the same name and the second was refused (found 2026-11-25, pressing "New" twice). It is not a
+ * placeholder: it is the set's name, and the person can rename it.
+ */
+export function defaultInputSetName(store: Store, workflowId: number, workflowName: string): string {
+  const day = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const base = `${workflowName} · ${day}`;
+  if (!store.inputSetNamed(workflowId, base)) return base;
+  for (let n = 2; n < 1000; n++) if (!store.inputSetNamed(workflowId, `${base} (${n})`)) return `${base} (${n})`;
+  throw new EngineError("there are too many input data sets of this workflow named after today; give this one a name of its own");
+}
+
+export function addInputSet(store: Store, workflowName: string, name: unknown, values: unknown = {}) {
+  const wf = store.getWorkflow(workflowName);
+  if (!wf) throw new EngineError(`workflow "${workflowName}" not found`);
+  const clean = inputSetName(name);
+  // No name given: one is made, unique within the workflow. Asking for one first would be a field between a person and
+  // "start this run now", and every set is renameable afterwards.
+  if (!clean) return store.addInputSet(wf.id, defaultInputSetName(store, wf.id, wf.name), isObject(values) ? values : {});
+  if (store.inputSetNamed(wf.id, clean)) throw new EngineError(`"${clean}" is already an input data set of this workflow; give this one another name`);
+  return store.addInputSet(wf.id, clean, isObject(values) ? values : {});
+}
+
+/**
+ * Change one. Its values are **not** checked for completeness: that is the point of it, to be half prepared for days.
+ * Only the name is checked, because two input data sets of one workflow cannot share one.
+ */
+export function setInputSet(store: Store, id: number, patch: { name?: unknown; values?: unknown }) {
+  const row = store.inputSetWithWorkflow(id);
+  if (!row) throw new EngineError(`input data set ${id} not found`);
+  const out: { name?: string; values?: any } = {};
+  if (patch.name !== undefined) {
+    const clean = inputSetName(patch.name);
+    const other = store.inputSetNamed(row.workflow_id, clean);
+    if (other && other.id !== id) throw new EngineError(`"${clean}" is already an input data set of this workflow; give this one another name`);
+    out.name = clean;
+  }
+  if (patch.values !== undefined) {
+    if (!isObject(patch.values)) throw new EngineError("an input data set's values are one JSON object");
+    out.values = patch.values;
+  }
+  store.updateInputSet(id, out);
+  return store.inputSetWithWorkflow(id)!;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** The stored values of one, ready to start from. Refuses one of another workflow. */
+export function inputSetValues(store: Store, id: number, workflowName: string): { set: any; values: Record<string, unknown> } {
+  const row = store.inputSetWithWorkflow(id);
+  if (!row) throw new EngineError(`input data set ${id} not found`);
+  if (row.workflow_name !== workflowName) throw new EngineError(`input data set ${id} belongs to "${row.workflow_name}", not "${workflowName}"`);
+  return { set: row, values: isObject(row.values) ? row.values : {} };
 }
 
 /**

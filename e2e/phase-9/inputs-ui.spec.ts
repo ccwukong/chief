@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, fake, test as base, type Server, roomyLayout } from "../helpers";
+import { expect, fake, test as base, type Server, roomyLayout, openInputSetPanel } from "../helpers";
 
 const test = base.extend<{ boot: (opts?: { env?: Record<string, string>; compact?: boolean }) => Promise<Server> }>({
   boot: async ({ chief }, use) => {
@@ -14,9 +14,9 @@ const tid = (page: Page, id: string) => page.getByTestId(id);
 test("E9.48-3 the Runs page and the designer ask for the inputs a workflow uses, and the run page shows them", async ({ chief, boot, page }) => {
   chief.importWorkflow(`
 name: review
-inputs: { params: { repo: my-org/app } }
+inputs: { repo: my-org/app }
 nodes:
-  - { id: review, type: agent, mcp: [], prompt: 'Review {{inputs.params.prlink}} in {{inputs.params.repo}} ${fake({ output: { ok: true } })}' }
+  - { id: review, type: agent, mcp: [], prompt: 'Review {{inputs.prlink}} in {{inputs.repo}} ${fake({ output: { ok: true } })}' }
 `);
   chief.importWorkflow(`
 name: plain
@@ -26,39 +26,48 @@ nodes:
 `);
   const srv = await boot();
 
-  // Runs page: the inputs are typed into the JSON editor.
+  // Runs page: a field for the input that needs a value, and the default folded away under it (15.120).
   await page.goto(srv.url + "/#/runs");
-  await tid(page, "new-run-workflow").selectOption("review");
-  // Only the editor: no list of inputs with stored values, no template button. And the shape is in the box as real JSON
-  // (15.116), the workflow's own default filled in and the input it leaves open a blank to type.
-  await expect(tid(page, "new-run-inputs-refs")).toHaveCount(0);
-  await expect(tid(page, "new-run-inputs-template")).toHaveCount(0);
-  await expect(tid(page, "new-run-inputs-editor")).toContainText("my-org/app");
-  await expect(tid(page, "new-run-inputs")).toHaveValue(/"prlink": ""/);
-  await expect(tid(page, "new-run-inputs-shape"), "a box emptied by hand gets the shape back").toBeVisible();
-  // A blank that is not filled in is refused.
-  await tid(page, "new-run-inputs").fill('{"params": {"prlink": ""}}');
-  await tid(page, "new-run-start").click();
-  await expect(tid(page, "error")).toContainText("inputs.params.prlink is empty");
-  expect(chief.calls()).toHaveLength(0);
-  await tid(page, "new-run-inputs").fill('{"params": {"prlink": "https://x/pull/7"}}');
-  await tid(page, "new-run-start").click();
+  await openInputSetPanel(page);
+  await tid(page, "input-set-workflow").selectOption("review");
+  await expect(tid(page, "new-run-inputs-field-prlink")).toBeVisible();
+  await expect(tid(page, "new-run-inputs-repo-input")).toHaveValue("my-org/app");
+  await expect(tid(page, "new-run-inputs-from-workflow-repo")).toBeVisible();
+  // Start run is disabled while the required-by-use input is empty, and says which field is missing.
+  await expect(tid(page, "input-set-start")).toBeDisabled();
+  await expect(tid(page, "input-set-start")).toHaveAttribute("title", /prlink/);
+  await tid(page, "new-run-inputs-prlink-input").fill("https://x/pull/7");
+  await tid(page, "input-set-start").click();
   await expect(tid(page, "run-status")).toHaveText("completed");
-  // The run page shows what the run ran with: the given link over the default repo.
+  // The run page reads back as the form that asked: the label, the value, and the JSON one click away.
+  await expect(tid(page, "run-input-prlink")).toContainText("https://x/pull/7");
+  await expect(tid(page, "run-input-repo")).toContainText("my-org/app");
+  // Both disclosures are opened **by their own state**, not by what is visible: the outer one opens by itself when the
+  // run came from a collection (15.122), and the inner one still starts shut — so "if not visible, click" closed the
+  // outer instead of opening the inner (found 2026-11-25).
+  const openIt = async (id: string, summary = true) => {
+    const el = tid(page, id);
+    if (!(await el.evaluate((n) => (n as HTMLDetailsElement).open))) await el.locator("summary").first().click({ force: !summary });
+  };
+  await openIt("run-inputs");
+  await openIt("run-inputs-json-view");
   await expect(tid(page, "run-inputs-json")).toContainText('"prlink": "https://x/pull/7"');
   await expect(tid(page, "run-inputs-json")).toContainText('"repo": "my-org/app"');
   expect(chief.calls()[0].prompt).toContain("Review https://x/pull/7 in my-org/app");
 
   // Designer: Run starts at once with the workflow's inputs, no dialog. An input that has no value is refused, naming it,
-  // and the Workflow tab is where it is set.
+  // and the Workflow tab is where it is set — now through a field, whose value is the default.
   await page.goto(srv.url + "/#/designer/review");
   await expect(tid(page, "flow-node-review")).toBeVisible();
   await tid(page, "btn-run").click();
-  await expect(tid(page, "designer-error")).toContainText("inputs.params.prlink");
+  await expect(tid(page, "designer-error")).toContainText("inputs.prlink");
   await expect(tid(page, "start-run")).toHaveCount(0);
   await expect(tid(page, "tab-workflow")).toHaveAttribute("aria-selected", "true");
-  await tid(page, "wf-inputs").fill('{"params": {"prlink": "https://x/pull/8", "repo": "my-org/app"}}');
-  await expect.poll(async () => (await srv.api("GET", "/api/workflows/review")).body.definition.inputs?.params?.prlink).toBe("https://x/pull/8");
+  // The two inputs it uses are declared first, then given their values.
+  await tid(page, "wf-inputs-adopt").click();
+  await expect(tid(page, "wf-input-field-0")).toBeVisible();
+  await tid(page, "wf-field-value-0-input").fill("https://x/pull/8");
+  await expect.poll(async () => (await srv.api("GET", "/api/workflows/review")).body.definition.inputs?.prlink).toBe("https://x/pull/8");
   await tid(page, "btn-run").click();
   await expect(page).toHaveURL(/#\/runs\/2$/);
   await expect(tid(page, "run-status")).toHaveText("completed");
@@ -68,7 +77,8 @@ nodes:
   await page.goto(srv.url + "/#/designer/plain");
   await expect(tid(page, "flow-node-a")).toBeVisible();
   await expect(tid(page, "btn-run-inputs")).toHaveCount(0);
-  await tid(page, "wf-inputs").fill('{"who": "everyone"}');
+  await tid(page, "wf-inputs-adopt").click();
+  await tid(page, "wf-field-value-0-input").fill("everyone");
   await expect.poll(async () => (await srv.api("GET", "/api/workflows/plain")).body.definition.inputs).toEqual({ who: "everyone" });
   await tid(page, "btn-run").click();
   await expect(page).toHaveURL(/#\/runs\/3$/);
@@ -86,6 +96,8 @@ test("E9.67-1 every JSON block is coloured the same way, whether it can be edite
   // line numbers — a numbered margin invites a click that does nothing (asked 2026-11-22).
   await page.goto(`${srv.url}/#/runs/${id}/full`);
   await page.getByText("Inputs this run ran with").click();
+  // The JSON is one more disclosure below the form that now reads the inputs (15.121).
+  await tid(page, "run-inputs-json-view").locator("summary").click();
   const block = tid(page, "run-inputs-json");
   await expect(block).toHaveText('{\n  "a": {\n    "who": "everyone",\n    "n": 3,\n    "ok": true\n  }\n}');
   for (const kind of ["key", "string", "number", "word"]) await expect(block.locator(`[data-json="${kind}"]`).first()).toBeVisible();

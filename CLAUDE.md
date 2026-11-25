@@ -1,7 +1,8 @@
 # chief — instructions for Claude Code
 
-The development standard is **[AGENTS.md](AGENTS.md)**, and the rules this repository enforces are in
-**[docs/guardrails.md](docs/guardrails.md)**. Read both before changing code.
+The development standard is **[AGENTS.md](AGENTS.md)**, the UI/UX standard is
+**[docs/design-system.md](docs/design-system.md)**, and the rules this repository enforces are in
+**[docs/guardrails.md](docs/guardrails.md)**. Read them before changing code.
 
 They are not suggestions an agent has to remember:
 

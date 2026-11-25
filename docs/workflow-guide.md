@@ -47,7 +47,7 @@ name in the Workflow section of the designer's side panel, then change what diff
 - Not copied: the original's runs, schedules and script approvals. A script that widens the sandbox
   must be approved again for the copy.
 - The working directory: a workflow in its default folder gives the copy its own default folder
-  (`.chief/workspace/<new-name>`). A workflow whose folder you chose keeps that folder, because its
+  (`~/.chief/workspace/<new-name>`). A workflow whose folder you chose keeps that folder, because its
   scripts and any MCP servers set up for that folder are there. Change it in the designer if the
   copy should work elsewhere.
 - MCP servers set up in Claude Code for the original's folder only are not available in a new
@@ -61,7 +61,8 @@ name in the Workflow section of the designer's side panel, then change what diff
 | `description` | Free text |
 | `agent` | Default adapter for agent nodes: `claude-code` (default), `codex`, `cursor`, `antigravity`, `opencode`, `hermes`. A node may name its own, and this one overrides the default in Settings: the order is the step's choice, then this, then Settings › Default agent CLI — so one workflow can use different subscriptions for different steps |
 | `budget` | `{ warn-usd, max-usd }`. At `max-usd` the run stops and asks whether to continue |
-| `inputs` | Default values for the run inputs (see below). A run gives its own with `chief run <name> --input key=value` (`a.b=value` for a nested one), `--inputs-json`, or the form that starts it |
+| `inputs` | Default values for the run inputs (see below). A run gives its own with `chief run <name> --input key=value` (`a.b=value` for a nested one), `--inputs-json`, or an input data set on the Runs page |
+| `input-fields` | Optional list of declared input fields (`path`, `label`, `type`, `required`, `description`, `options`) so the Runs, Schedules and Designer screens can ask for inputs as a labelled form alongside JSON |
 | `nodes` | The nodes, see below |
 | `edges` | `a -> b` means b runs after a completed. The graph must not contain a cycle |
 
@@ -89,8 +90,10 @@ nodes:
 edges: [planner -> runner]
 ```
 
-The designer's Workflow tab holds this JSON: change the values there, then press **Run**, which
-starts at once with them. From the Runs page or the command line a run can also give its own
+The designer's Workflow tab edits these as a structured **input field list** (with a JSON view of the
+defaults beside it): change the values there, then press **Run**, which starts at once with them. From
+the Runs page, you can prepare reusable **input data sets** using a **Form | JSON** switch in a
+resizable right side-panel and start runs from them; from the command line a run can also give its own
 values, `{"planner": {"prlink": "https://github.com/my-org/app/pull/42"}}`, which are laid over the
 workflow's level by level, so `runner.mode` keeps `dry` here.
 The inputs belong to the run, not to one block: any block may read any section. Sections per
@@ -100,6 +103,41 @@ prompt uses that has no value at all is refused before anything starts. From the
 
 A block's output is defined the same optional way, per block: its **Output schema** says which
 fields its result has, and later blocks read them as `{{nodes.<block id>.output.<name>}}`.
+
+### Describing the inputs, so a screen can ask for them
+
+An input named by a path is enough for a prompt, but not enough to ask a person for it. `input-fields`
+gives each input the words it is asked with, its type, and whether a value must be given:
+
+```yaml
+name: review
+inputs: { runner: { mode: dry } }
+input-fields:
+  - { path: planner.prlink, label: Pull request link, type: text, required: true,
+      description: The pull request to review }
+  - { path: runner.mode, label: Mode, type: choose-one,
+      options: [{ label: Dry run, value: dry }, { label: Real run, value: real }] }
+nodes:
+  - id: planner
+    type: agent
+    prompt: Plan the review of {{inputs.planner.prlink}}.
+edges: []
+```
+
+`type` is `text`, `long-text`, `number`, `choose-one`, `choose-many` or `yes-no`; `choose-one` and
+`choose-many` need `options`, each with a `label` and the `value` the step receives. There is no
+`default` here on purpose: the default is the value in `inputs` (`runner.mode` above is `dry`), so a
+required field cannot also have one — that is refused when the workflow is saved, as is an unknown
+`type`, a path that is not a dotted name, an option with no `value`, and a text field whose default is
+an object or a list (such a value is edited as JSON; leave the field undeclared).
+
+Declaring is optional and additive. An input whose prompt is read but which nobody declared is asked
+for by its path, typed from its default, so existing workflows keep working and a run may still carry
+any field it likes. A run or a schedule that leaves a **required** field empty is refused before
+anything starts, naming the label and the path.
+
+A flat name (`prlink`, one segment) is the easiest to ask for in a form, and is what the designer
+offers first; a section per block is a convention, not a requirement.
 
 ## Templates
 

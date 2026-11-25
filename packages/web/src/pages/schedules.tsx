@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, get, getPage } from "../api";
-import { AsyncButton, ErrorBox, Field, JsonField, Modal, Pager, TrashButton, useDraft } from "../ui";
+import { AsyncButton, ErrorBox, Field, Help, Modal, Pager, readDraft, TrashButton, useDraft, writeDraft } from "../ui";
+import { InputFormWithJson, missingRequired, parseInputs, templateText, type InputField } from "../run-inputs";
 import { usePolling } from "../polling";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -25,7 +26,10 @@ export function Schedules() {
   const [perPage, setPerPage] = useDraft("schedules:per-page", 25);
   const [workflow, setWorkflow] = useDraft("schedule:new:workflow", "");
   const [cron, setCron] = useDraft("schedule:new:cron", "");
-  const [inputs, setInputs, clearInputs] = useDraft<unknown>("schedule:new:inputs", undefined);
+  /** The inputs typed for each workflow, so choosing another and coming back keeps each one's (15.121). */
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  /** The fields the chosen workflow asks for. Without them an input is asked for by its path. */
+  const [fields, setFields] = useState<InputField[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<any | null>(null);
 
@@ -36,6 +40,14 @@ export function Schedules() {
     }).catch(() => {});
   }, []);
 
+  // The fields the chosen workflow asks for: the same list the run card builds its form from.
+  useEffect(() => {
+    if (!workflow) return setFields([]);
+    let live = true;
+    get(`/api/workflows/${encodeURIComponent(workflow)}`).then((w) => live && setFields(w.input_refs ?? [])).catch(() => live && setFields([]));
+    return () => { live = false; };
+  }, [workflow]);
+
   // Last and next firing change while the page is open, as runs start, so the list keeps asking.
   const load = useCallback(() => getPage("/api/schedules", page, perPage).then(({ items, total }) => {
     // A page that emptied (a schedule removed) moves back to the last page that has one.
@@ -45,12 +57,24 @@ export function Schedules() {
   }).catch((e) => setError(e.message)), [page, perPage]);
   usePolling(load, 5000, [load]);
 
+  // The inputs of the schedule about to be added: one text per workflow, seeded from the workflow's shape.
+  const draftKey = (name: string) => `schedule:new:inputs:${name}`;
+  const inputsText = typed[workflow] ?? readDraft<string>(draftKey(workflow)) ?? templateText(fields);
+  const setInputsText = (t: string) => { writeDraft(draftKey(workflow), t); setTyped((m) => ({ ...m, [workflow]: t })); };
+
   const add = async () => {
     setFormError(null);
+    const parsed = parseInputs(inputsText) ?? {};
+    if (inputsText.trim() && !parseInputs(inputsText)) return setFormError("The inputs are not valid JSON. Fix them in the JSON view.");
+    const missing = missingRequired(fields, parsed);
+    // Same rule as a run: a required field with no value would be refused at every tick, so it is refused now.
+    if (missing.length) return setFormError(`Still needed: ${missing.map((f) => `${f.label} (inputs.${f.path})`).join(", ")}`);
     try {
-      await api("POST", "/api/schedules", { workflow, cron, inputs: inputs ?? {} });
+      await api("POST", "/api/schedules", { workflow, cron, inputs: parsed });
       setCron("");
-      clearInputs();
+      // What was typed is cleared, so the next schedule of this workflow starts from its shape again.
+      writeDraft(draftKey(workflow), "");
+      setTyped((m) => { const next = { ...m }; delete next[workflow]; return next; });
       setPage(1);
       void load();
     } catch (e: any) {
@@ -77,7 +101,7 @@ export function Schedules() {
   };
 
   return (
-    <div className="page-width p-4 md:p-6">
+    <div className="page-width py-6" data-testid="page-column">
       <h1 className="mb-1 text-xl font-semibold">Schedules</h1>
       <p className="mb-2 text-sm text-slate-600">
         A schedule starts a workflow at the times a cron expression names. Schedules fire while chief is running: the
@@ -113,13 +137,20 @@ export function Schedules() {
                 onChange={(e) => { setCron(e.target.value); setFormError(null); }} />
             </Field>
           </div>
-          <div className="min-w-[14rem] flex-[2]">
-            <Field label="Inputs" hint="Optional JSON, handed to the run as its inputs.">
-              <JsonField testid="schedule-inputs" rows={2} value={inputs} onChange={setInputs} placeholder='{ "day": "today" }' />
-            </Field>
-          </div>
           <AsyncButton data-testid="schedule-add" variant="default" className="mt-6" disabled={!workflow || !cron.trim()} onClick={add}>Add schedule</AsyncButton>
         </div>
+        {/* The inputs are fields, not a JSON box (15.121), and the JSON stays one disclosure away: the same
+            form the run card asks with, so a schedule and a run of the same workflow cannot ask differently. */}
+        {(fields.length > 0 || inputsText.trim() !== "") && (
+          <div className="mt-2 min-w-0 md:max-w-3xl" data-testid="schedule-inputs-block">
+            <div className="mb-1 flex flex-wrap items-baseline gap-2">
+              <span className="label mb-0">Inputs<Help id="new-run-inputs" /></span>
+              <Button variant="link" size="sm" className="h-auto px-0 text-2xs" type="button" data-testid="schedule-inputs-shape"
+                title="Put the values back to the workflow's own defaults" onClick={() => setInputsText(templateText(fields))}>Reset to the defaults</Button>
+            </div>
+            <InputFormWithJson fields={fields} text={inputsText} setText={setInputsText} stem="schedule-inputs" />
+          </div>
+        )}
         <ErrorBox error={formError} testid="schedule-error" />
       </Card>
 
@@ -177,21 +208,33 @@ function ScheduleRow({ r, onSaved, onToggle, onRemove }: {
   r: any; onSaved: (next: any) => void; onToggle: () => void; onRemove: () => void;
 }) {
   const [cron, setCron] = useState(String(r.cron));
-  const [inputs, setInputs] = useState(JSON.stringify(r.inputs ?? {}));
   const [problem, setProblem] = useState<{ field: "cron" | "inputs"; message: string } | null>(null);
   const [saving, setSaving] = useState<"cron" | "inputs" | null>(null);
-
-  // The list polls every few seconds. A value the server now has wins only when it is not the one this row is showing —
-  // so a poll never overwrites a half-typed expression, and an edit made in another window still arrives.
-  useEffect(() => { setCron(String(r.cron)); }, [r.cron]);
-  useEffect(() => { setInputs((cur) => (cur === JSON.stringify(r.inputs ?? {}) ? cur : JSON.stringify(r.inputs ?? {}))); }, [r.inputs]);
-
   /**
    * Set by Escape before the field is blurred, so the blur that follows does not save what Escape just abandoned. A ref,
    * because the blur fires before React can re-render with the state reset (found by E15.105-1: Escape saved the value it
    * was meant to throw away).
    */
   const abandoning = useRef(false);
+
+  // ── the inputs, edited as the same form the run card uses (15.121) ─────────
+  // The cell is a table cell, so the form opens **in the row** on request rather than sitting there for
+  // every schedule on the page. Its fields save themselves as they change, like every other field in
+  // chief: there is no Save button, only a way back to the summary.
+  const [open, setOpen] = useState(false);
+  const [fields, setFields] = useState<InputField[]>([]);
+  const [text, setText] = useState(() => JSON.stringify(r.inputs ?? {}, null, 2));
+  /** Set once the person has touched this row's inputs: a poll must not rewrite them under the caret. */
+  const dirty = useRef(false);
+  useEffect(() => { setCron(String(r.cron)); }, [r.cron]);
+  useEffect(() => { if (!dirty.current) setText(JSON.stringify(r.inputs ?? {}, null, 2)); }, [r.inputs]);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    get(`/api/workflows/${encodeURIComponent(r.workflow_name)}`).then((w) => live && setFields(w.input_refs ?? [])).catch(() => live && setFields([]));
+    return () => { live = false; };
+  }, [open, r.workflow_name]);
+
   const save = async (field: "cron" | "inputs", value: unknown) => {
     setSaving(field);
     setProblem(null);
@@ -202,7 +245,8 @@ function ScheduleRow({ r, onSaved, onToggle, onRemove }: {
       // What is typed stays; the reason goes under the field it belongs to.
       setProblem({ field, message: e.message });
       setCron(String(r.cron));
-      setInputs(JSON.stringify(r.inputs ?? {}));
+      setText(JSON.stringify(r.inputs ?? {}, null, 2));
+      dirty.current = false;
     } finally {
       setSaving(null);
     }
@@ -217,19 +261,31 @@ function ScheduleRow({ r, onSaved, onToggle, onRemove }: {
     void save("cron", value);
   };
 
-  const commitInputs = () => {
-    if (abandoning.current) { abandoning.current = false; setInputs(JSON.stringify(r.inputs ?? {})); return; }
-    let parsed: unknown;
-    try { parsed = JSON.parse(inputs || "{}"); } catch (e: any) { setProblem({ field: "inputs", message: `Not valid JSON: ${e.message}` }); setInputs(JSON.stringify(r.inputs ?? {})); return; }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) { setProblem({ field: "inputs", message: "Inputs are one JSON object, like {\"day\": \"today\"}." }); setInputs(JSON.stringify(r.inputs ?? {})); return; }
-    if (JSON.stringify(parsed) === JSON.stringify(r.inputs ?? {})) return;
-    void save("inputs", parsed);
+  /** An edit to a field: the text follows it, and the schedule is written a moment later (a positive-delay debounce). */
+  const editInputs = (next: string) => {
+    dirty.current = true;
+    setText(next);
+    setProblem(null);
   };
+  useEffect(() => {
+    if (!dirty.current) return;
+    const t = setTimeout(() => {
+      const parsed = parseInputs(text);
+      if (!parsed) return;   // the JSON view says why; nothing is written that the server cannot read
+      if (JSON.stringify(parsed) === JSON.stringify(r.inputs ?? {})) { dirty.current = false; return; }
+      void save("inputs", parsed).then(() => { dirty.current = false; });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [text]);
 
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
-    if (e.key === "Escape") { abandoning.current = true; setProblem(null); setCron(String(r.cron)); setInputs(JSON.stringify(r.inputs ?? {})); e.currentTarget.blur(); }
+    if (e.key === "Escape") { abandoning.current = true; setProblem(null); setCron(String(r.cron)); setText(JSON.stringify(r.inputs ?? {}, null, 2)); dirty.current = false; e.currentTarget.blur(); }
   };
+
+  const summary = Object.keys(r.inputs ?? {}).length
+    ? Object.entries(r.inputs ?? {}).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ")
+    : "no inputs";
 
   return (
     <TableRow data-testid={`schedule-row-${r.id}`} data-enabled={r.enabled} data-schedule-id={r.id} className="border-t border-slate-100 align-top">
@@ -267,11 +323,21 @@ function ScheduleRow({ r, onSaved, onToggle, onRemove }: {
             workflow that is out of service, and the badge in the previous cell says so (task 15.2). */}
       <TableCell className="mono px-3 py-2 text-xs text-slate-600" data-testid={`schedule-next-${r.id}`}>{r.next_run_at ?? (r.enabled && !r.workflow_archived ? "never" : "—")}</TableCell>
       <TableCell className="px-3 py-2 text-xs">
-        {/* Same rule as the expression: edited in place, written on blur. JSON, because that is what a run is started with. */}
-        <Input className="mono h-8 w-48 px-2 text-2xs" data-testid={`schedule-inputs-${r.id}`} value={inputs} disabled={saving === "inputs"}
-          aria-label={`Inputs, for the schedule of ${r.workflow_name}`} aria-invalid={problem?.field === "inputs" ? true : undefined}
-          title="Editable JSON, handed to the run. It saves when you leave the field; Enter saves, Escape puts back what is stored."
-          onChange={(e) => { setInputs(e.target.value); setProblem(null); }} onBlur={commitInputs} onKeyDown={onKey} />
+        {/* The fields, opened in the row rather than a JSON box in the cell (15.121). The summary is what the
+            row is for — reading — and the form is one click from it, saving each field as it changes. */}
+        {open ? (
+          <div className="min-w-[15rem] max-w-[22rem]" data-testid={`schedule-inputs-editor-${r.id}`}>
+            <InputFormWithJson fields={fields} text={text} setText={editInputs} stem={`schedule-inputs-${r.id}`} />
+            <div className="mt-1 flex items-center gap-2">
+              <Button variant="link" size="sm" className="h-auto px-0 text-2xs" type="button" data-testid={`schedule-inputs-done-${r.id}`} onClick={() => setOpen(false)}>Done</Button>
+              <span className="text-2xs text-slate-500" data-testid={`schedule-inputs-state-${r.id}`}>{saving === "inputs" ? "Saving…" : problem?.field === "inputs" ? "Not saved" : "Saved"}</span>
+            </div>
+          </div>
+        ) : (
+          <Button variant="link" type="button" data-testid={`schedule-inputs-summary-${r.id}`} title="Edit the inputs this schedule hands to its runs"
+            className="block h-auto w-full max-w-[22rem] justify-start truncate px-0 py-0 text-left font-normal text-slate-700 hover:no-underline"
+            onClick={() => setOpen(true)}>{summary}</Button>
+        )}
         {problem?.field === "inputs" && <div className="mt-1 text-2xs text-destructive" data-testid={`schedule-inputs-error-${r.id}`}>{problem.message}</div>}
       </TableCell>
       <TableCell className="whitespace-nowrap px-3 py-2">

@@ -201,6 +201,27 @@ const HELP = "packages/web/src/help.ts";
   }
 }
 
+// ── 8. Design system consistency (tokens & buttons) ────────────────────────────────────────────
+// Every page in packages/web/src/ follows docs/design-system.md: semantic theme tokens instead of
+// raw hex or `bg-white` (which break dark mode and ignore the chosen shadcn base palette), and
+// `variant="link"` instead of faking an inline link with `variant="ghost"` + `underline`.
+for (const p of all) {
+  const r = rel(p);
+  if (!r.startsWith("packages/web/src/") || !/\.(ts|tsx)$/.test(r)) continue;
+  const lines = stripComments(read(p)).split("\n");
+  lines.forEach((line, i) => {
+    if (/\b(?:bg|text|border)-\[#[0-9a-fA-F]{3,8}\]/.test(line)) {
+      fail("design-system", r, `line ${i + 1}: hardcoded arbitrary hex color class breaks dark mode and base palettes.`, "Use a semantic token from styles.css (bg-surface, bg-page, bg-primary, border-border, or slate-*/status ramps). See docs/design-system.md.");
+    }
+    if (/\bbg-white\b/.test(line)) {
+      fail("design-system", r, `line ${i + 1}: hardcoded \`bg-white\` breaks dark mode.`, "Use `bg-surface` (var(--surface)) so cards and controls adapt to light and dark themes. See docs/design-system.md.");
+    }
+    if (/variant="ghost"[^>]*\bunderline\b/.test(line)) {
+      fail("design-system", r, `line ${i + 1}: \`variant="ghost"\` combined with \`underline\` fakes an inline link with 36 px button padding.`, 'Use `variant="link" className="h-auto px-0 underline"` instead. See docs/design-system.md.');
+    }
+  });
+}
+
 // ── report ─────────────────────────────────────────────────────────────────────────────────────
 const RULES = {
   naming: "Names are lower-case kebab-case",
@@ -210,6 +231,7 @@ const RULES = {
   "state-home": "State is in ~/.chief, never in a checkout",
   "no-bun": "No dependency on a runtime the project does not ship",
   "help-short": "A tooltip is scanned, not read",
+  "design-system": "Design system consistency (tokens & buttons)",
 };
 
 if (!problems.length) {

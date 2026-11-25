@@ -88,8 +88,11 @@ Then `chief <command>` works from any directory — `chief runs list`, `chief se
 rest of this page writes `chief` for that installed command; from a checkout without it, use
 `npm run chief <command>` instead. `npm run install:cli -- --dir ~/bin` installs it somewhere else.
 
-Open <http://127.0.0.1:8080>, go to **Designer**, press **New workflow** and give it a name, then
-drag an **Agent** block onto the canvas and type what it should do. Add a **Gate** after it if you want to be asked
+Open <http://127.0.0.1:8080>: on a fresh install, chief seeds a ready-to-run sample workflow
+(`trip-planner`, with a pre-filled sample input data set and zero MCP setup required) so you can try
+a full run — including an interactive human gate — right away, or delete it anytime. To build your
+own, go to **Designer**, press **New workflow** and give it a name, then drag an **Agent** block
+onto the canvas and type what it should do. Add a **Gate** after it if you want to be asked
 something, connect the blocks, and press **Run**.
 
 To start from an example instead:
@@ -235,7 +238,7 @@ one that would be refused is refused with the reason, before anything is written
 | Concept | What it is |
 |---|---|
 | **Workflow** | Steps (nodes) and the arrows between them: a graph without cycles. Stored as YAML or JSON |
-| **Inputs** | Values a workflow is given when it runs, used in prompts as `{{inputs.params.prlink}}` (any depth). A run gives a JSON object of the same shape; the workflow can hold defaults. One workflow, many configurations |
+| **Inputs** | Values a workflow is given when it runs, used in prompts as `{{inputs.params.prlink}}` (any depth). A workflow can hold defaults (`inputs`) and declare labelled fields (`input-fields`) so the UI asks for them as a form alongside JSON. Reusable **input data sets** can be prepared ahead of time on the Runs page |
 | **Agent step** | Runs the agent CLI with your prompt. Each step is its own session; it is given the results of the steps before it |
 | **Script step** | Runs a local script in a sandbox. Its input arrives on stdin |
 | **Gate** | The run waits for you. Either describe in plain words what you want to be asked (`ask`: a form is worked out from your instruction and the earlier results), or use a fixed form: pick from a list, approve, or type feedback |
@@ -260,8 +263,8 @@ ship in [examples/](examples/); they differ only in where they start (Slack, Git
 `chief serve` starts it on <http://127.0.0.1:8080> (`--port n` for another port) and opens that page in your default browser (`--no-open` to skip; `CHIEF_BROWSER=<command>` to open it with another program).
 
 - **Designer.** The bar at the top picks an existing workflow, runs it (**Run**), imports or exports
-  it as YAML, makes a new one (**New workflow** opens a panel from the right) or copies the open one
-  (**Clone**). The panel on the right has two tabs: the open workflow's settings and its inputs, and
+  it as YAML, makes a new one (**New workflow** opens a resizable panel from the right) or copies the open one
+  (**Clone**). The panel on the right (also horizontally resizable) has two tabs: the open workflow's settings and its declared input fields (plus a JSON view of defaults), and
   the selected step. On a laptop-sized window the designer makes room for the canvas by itself: the
   sidebar and the blocks shrink to slim rails and the panel appears when a step is selected. Drag blocks onto the
   canvas and connect them. Arrows show the order. The model and
@@ -275,19 +278,24 @@ ship in [examples/](examples/); they differ only in where they start (Slack, Git
   copied. A step can also use a different agent CLI from the rest of the workflow (personal
   subscription for one step, work for the next); it then shows that CLI on the canvas. See
   ["One workflow, several agent CLIs"](docs/workflow-guide.md#one-workflow-several-agent-clis).
-- **Runs.** Click a run in the list and it opens in a panel beside the list, so the list stays:
-  another row or the arrow keys change the run, Escape closes it, and **Open full page** shows the
-  run alone. **Run again** on a run starts a new run of the same workflow with the same inputs, for
-  the next round of something like a pull request review. Start a run: pick the workflow and give the run's
-  inputs as JSON; a run that lacks an input its prompts use is refused before it starts. The run page shows the
-  run on the workflow's diagram, each step coloured by its status and the step in progress pulsing;
-  click a step to open it. Below, the steps are **tabs**: one step's prompt, result and anything else
-  it wrote at a time, with its status on the tab, so a ten-step workflow is a row of tabs rather than
-  a page of scrolling. The step that is waiting for an answer is the tab that is open, and if you are
-  reading another one, a line above says where the question is and takes you to it. A gate is
-  answered inside the step that waits. One **record** follows the steps: every message and every
-  event chief itself reported, in one list you can step through. Finished runs can be deleted with the
-  bin in their header, and each row of the list has one too.
+- **Runs.** A collapsible **Workflows** column on the left filters the page by workflow (with counts
+  and quick links to open a workflow in the designer or create a new one). The page has two tabs:
+  **Input data** (default) and **Runs**. Under **Input data**, you prepare named **input data sets**
+  for a workflow over time in a horizontally resizable right side-panel with a **Form | JSON** switch:
+  a new form stores nothing until you press **Save data set**, after which edits save themselves and
+  the action becomes **Start run** (a run that lacks a required or referenced input is refused before
+  it starts). Under **Runs**, click a run in the list and it opens in a horizontally resizable panel
+  beside the list, so the list stays: another row or the arrow keys change the run, Escape closes it,
+  and **Open full page** shows the run alone. **Run again** on a run starts a new run of the same
+  workflow with the same inputs, for the next round of something like a pull request review. The run
+  page shows the run on the workflow's diagram, each step coloured by its status and the step in
+  progress pulsing; click a step to open it. Below, the steps are **tabs**: one step's prompt, result
+  and anything else it wrote at a time, with its status on the tab, so a ten-step workflow is a row of
+  tabs rather than a page of scrolling. The step that is waiting for an answer is the tab that is open,
+  and if you are reading another one, a line above says where the question is and takes you to it. A
+  gate is answered inside the step that waits. One **record** follows the steps: every message and
+  every event chief itself reported, in one list you can step through. Finished runs can be deleted
+  with the bin in their header, and each row of the list has one too.
 - **When a step fails**, for example because what it read did not fit in the model's context
   window, open it, pick another model or rewrite its prompt, and press **Resume**. Completed steps
   keep their results: only that step and the ones after it run again. Steps that have not started
@@ -328,9 +336,11 @@ A run open in the panel over the list, in the dark theme:
 The screenshots use made-up data. `node e2e/tools/take-screenshots.mjs` takes them again from a
 throw-away chief with the example workflow and stand-in agent CLIs.
 
-There are no Save buttons: every change saves itself, and anything you are typing survives a page
-refresh. In the designer a change is stored at once and becomes the workflow as soon as what is on
-the canvas is valid; until then the last valid version is the one that runs.
+Every edit to an existing workflow, setting, schedule or input data set saves itself — there are no
+Save buttons for edits (the one deliberate exception is creating a brand-new input data set, which
+uses **Save data set** so an unsaved form is not stored until you choose to save it). Anything you are
+typing survives a page refresh. In the designer a change is stored at once and becomes the workflow as
+soon as what is on the canvas is valid; until then the last valid version is the one that runs.
 
 While the server runs it prints a log in its terminal: requests that change something or fail,
 runs and steps as they start, finish or fail, gates waiting for you, and each time it reads the
@@ -401,7 +411,7 @@ Everything chief persists is in `~/.chief/`, outside any code checkout — the s
   workflows get theirs.
 - **Back it up if you care about the history.** Nothing else holds it, and deleting `~/.chief` deletes
   every workflow and run. `chief doctor` prints the path in use.
-- The database has one schema per feature (workflow, run, agent, assistant, system, draft).
+- The database has one schema per feature (workflow, run, input_set, agent, assistant, system, draft).
 
 ## MCP servers
 
