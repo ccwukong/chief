@@ -443,10 +443,11 @@ test("E15.72-1 the app's controls are the shadcn components, at one height and o
     const fields = await page.locator("input:not([type=checkbox]):visible, select:visible").evaluateAll((els) =>
       els.map((e) => Math.round(e.getBoundingClientRect().height)).filter((h) => h > 0));
     for (const h of fields) expect(h, "a field is the shadcn height").toBe(36);
-    // Outside the rail and the colour-scheme picker: both stack a swatch or an icon with a caption under it, so they are
-    // legitimately taller than a button (E15.79-1 and E15.82-1 measure those). Everything else is shadcn's heights.
+    // Outside the rail, the colour-scheme picker, and the workflow column. The first two stack a swatch or an icon
+    // with a caption (E15.79-1, E15.82-1). The column wraps a workflow's whole name, so a long one is taller than a
+    // one-line button (reported 2026-11-27: the name was cut to an ellipsis). Everything else is shadcn's heights.
     const buttons = await page.locator("button:visible").evaluateAll((els) =>
-      els.filter((e) => !e.closest('[data-testid="sidenav"]') && !(e.getAttribute("data-testid") ?? "").startsWith("base-"))
+      els.filter((e) => !e.closest('[data-testid="sidenav"]') && !e.closest('[data-testid="workflows-panel"]') && !(e.getAttribute("data-testid") ?? "").startsWith("base-"))
         .map((e) => Math.round(e.getBoundingClientRect().height)).filter((h) => h > 0));
     for (const h of buttons) expect(h, "a button is not taller than shadcn's largest").toBeLessThanOrEqual(40);
   }

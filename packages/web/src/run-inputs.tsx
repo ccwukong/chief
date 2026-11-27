@@ -147,6 +147,17 @@ export function blankInputs(fields: InputField[], given: unknown): string[] {
   return fields.filter((f) => { const r = getPath(given, f.path); return r.found && r.value === ""; }).map((f) => f.path);
 }
 
+/**
+ * Fields this input data set has not answered. A workflow default is not an answer: the set is the values for
+ * one run, and the default is the sample on the workflow. `0` and `false` count; an empty text does not.
+ */
+export function unfilledInputs(fields: InputField[], given: unknown): InputField[] {
+  return fields.filter((f) => {
+    const r = getPath(given, f.path);
+    return !r.found || r.value == null || r.value === "";
+  });
+}
+
 /** Required fields with no value. An empty text is no answer. */
 export function missingRequired(fields: InputField[], given: unknown): InputField[] {
   return fields.filter((f) => {

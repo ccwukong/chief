@@ -55,7 +55,7 @@ Always use `<Button>` from `packages/web/src/components/ui/button.tsx` (or `<Asy
 | **Icon / chrome button** | `<Button variant="ghost" size="icon-sm">` or `size="icon"` | Borderless icon trigger: close `×`, collapse/expand chevrons, prev/next arrows, history clock, `+` new chat. Always set `aria-label` and `title`. |
 | **Inline text action** **(enforced)** | `<Button variant="link" className="h-auto px-0 …">` | Inline actions in prose, section headers, or table rows (*Clear the values*, *Ask chief bot*, *Start*, *Change its model*, *Keep it*). **Never** fake a link with `variant="ghost"` + `underline`. |
 | **Remove / delete trigger** | `<TrashButton>` from `ui.tsx` | Always a quiet slate bin glyph that turns `--destructive` on hover. Never a filled red button. |
-| **Destructive confirmation / non-delete hazard** | `<Button variant="destructive">` / `<AsyncButton variant="destructive">` | **Only** inside a confirmation dialog (*Delete run*, *Delete workflow*) or for non-delete high-impact actions (*Cancel run*, *Revert run*, *Reject gate*). |
+| **Destructive confirmation / non-delete hazard** | `<Button variant="destructive">` / `<AsyncButton variant="destructive">` | **Only** inside a confirmation dialog (*Delete run*, *Delete workflow*) or for non-delete high-impact actions (*Cancel run*, *Reject gate*). |
 | **Async server action** | `<AsyncButton>` from `ui.tsx` | Required for any button that awaits an HTTP request (shows a spinner and prevents double clicks). |
 
 ## 4. Themes, Color Schemes & Tokens

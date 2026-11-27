@@ -7,7 +7,6 @@ import type { McpWriteRequest } from "../adapters/types.ts";
 import { enabledProviders, providerChosenOff, providerLocated } from "../providers.ts";
 import { askAboutRun, askAdapter, askConversation, assistantAdapterFor, assistantAnswer, assistantActions, assistantConversation, assistantTooling, cancelAssistantAnswer } from "../ask.ts";
 import { answerGate, driveRun, EngineError, requestCancel, requestPause, rerunRun, resumeRun, startRun } from "../engine/engine.ts";
-import { revertRun } from "../engine/saga.ts";
 import { addInputSet, addSchedule, approveWorkflow, cloneWorkflow, ConflictError, deleteRuns, doctor, ensureMcp, inputSetValues, knownFolders, listModels, refreshMcp, pendingApprovals, refinePrompt, runDetail, changeStep, setModelForSteps, setInputSet, readiness, setStepModel, saveDefinition, setSchedule, validateFull } from "../ops.ts";
 import { log, logDebug, logging } from "../log.ts";
 import { defaultWorkspace } from "../paths.ts";
@@ -18,12 +17,11 @@ import { sandboxStatus } from "../sandbox/sandbox.ts";
 import type { Store } from "../store/store.ts";
 import { TERMINAL_RUN } from "../store/types.ts";
 import { parseText, toYaml, validateWorkflow } from "../workflow/load.ts";
-import { describeInputs } from "../workflow/inputs.ts";
-import { mergeInputs } from "../workflow/inputs.ts";
+import { describeInputs, mergeInputs, unansweredInputs, unansweredInputsMessage } from "../workflow/inputs.ts";
 import { describeCron, minuteKey, nextRun } from "../util/cron.ts";
 
 /** See /api/meta. Keep in step with REQUIRED_API in packages/web/src/app.tsx. */
-export const API_LEVEL = 17;
+export const API_LEVEL = 18;
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -498,6 +496,13 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
       const got = inputSetValues(store, Number(b.input_set), b.workflow);
       fromInputSet = { id: got.set.id, name: got.set.name };
       inputs = mergeInputs(got.values, inputs);
+      // The set's own values, plus anything this request lays over them — not the workflow's defaults. Those
+      // defaults are what a run without a set uses. Counting them here is how an empty set was started with
+      // someone else's text (reported 2026-11-27).
+      if (target) {
+        const pending = unansweredInputs(target.definition, inputs);
+        if (pending.length) throw new EngineError(unansweredInputsMessage(`run "${target.name}"`, pending));
+      }
     }
     const run = startRun(store, b.workflow, inputs, b.budget ?? null, null, null, fromInputSet);
     launch(run.id);
@@ -571,11 +576,6 @@ export function createApp(store: Store, opts: { port: () => number; assets: WebA
     const b = await body(c);
     return c.json(await askAboutRun(store, id(c.req.param("id"), "run id"), { question: String(b.question ?? ""), model: typeof b.model === "string" && b.model ? b.model : undefined }));
   });
-  app.post("/api/runs/:id/revert", async (c) => {
-    const b = await c.req.json().catch(() => ({}));
-    return c.json(await revertRun(store, id(c.req.param("id"), "run id"), { to: typeof b?.to === "string" && b.to ? b.to : undefined }));
-  });
-
   /** Live event stream. Polls the database, so runs driven by another chief process show up too. */
   app.get("/api/runs/:id/events", (c) => {
     const runId = id(c.req.param("id"), "run id");

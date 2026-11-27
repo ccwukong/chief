@@ -81,7 +81,6 @@ export const HELP: Record<string, { text: string; use?: string; example?: string
       "The agent is told the shape and the result is checked against it. A mismatch is sent back for a correction.",
       "Read the whole result with {{nodes.<id>.output}}. Without a schema, reading one field can fail.",
     ].join("\n"), example: '{"summary": "string",\n "items": [{"title": "string", "priority": "string"}]}\n\nLater: {{nodes.plan.output.items}}' },
-  "compensate-prompt": { text: "How to undo what this step did. Used only when you revert a run. {{output.side_effects}} is the list of changes the step reported. Leave empty for steps that only read.", example: "Delete these documents: {{output.side_effects}}" },
   irreversible: { text: "Tick this when the step does something that cannot be taken back, such as sending a message. The run then stops and asks you before running the step." },
 
   // ── script node ──────────────────────────────────────────────────────────
@@ -92,7 +91,6 @@ export const HELP: Record<string, { text: string; use?: string; example?: string
   "sandbox-network": { text: "Scripts run in a sandbox with no network access. Tick this only for a script that must call a service. You will be asked to approve it before the workflow can run." },
   "sandbox-write": { text: "A sandboxed script may change files only in the working directory and in a temporary folder. List further folders it may write to, one per line. Needs your approval. Credentials, start-up files and anything outside your home folder can never be listed.", example: "~/reports" },
   "sandbox-env": { text: "Scripts do not see your environment variables. List the names of the ones this script needs, separated by commas. Needs your approval.", example: "GITHUB_TOKEN" },
-  "compensate-run": { text: "A script that undoes what this step did. Used only when you revert a run. It receives the step's result and reported changes as JSON on standard input.", example: "scripts/delete-report.py" },
 
   // ── gate node ────────────────────────────────────────────────────────────
   kind: { text: [

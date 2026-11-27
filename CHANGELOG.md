@@ -8,6 +8,23 @@ landing page and the release notes take it from the same place.
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-11-27
+
+### Removed
+
+- **Revert a run.** The run page no longer has a Revert card, and `chief revert` and
+  `POST /api/runs/:id/revert` are gone. A step's compensation prompt and script are no longer
+  asked for in the designer. Side effects stay in the run's record, and a step marked irreversible
+  still asks before it runs. A workflow file that already has a `compensate` block still loads.
+
+### Fixed
+
+- **An input data set is ready only when its own fields are filled.** A workflow's default values
+  no longer mark an empty set as ready, and starting a run from a set is refused until every field
+  has a value in that set.
+- **Workflow names in the Runs column wrap.** The set count sits under the name, so a long name is
+  no longer cut off.
+
 ## [0.4.2] — 2026-11-25
 
 ### Changed

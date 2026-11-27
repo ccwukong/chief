@@ -186,7 +186,7 @@ edges: [first -> second]
   expect(chief.calls()[0].prompt).toContain("A for ana");
 });
 
-test("E6.3-3 pause, resume, cancel and revert work from the run detail", async ({ chief, boot, page }) => {
+test("E6.3-3 pause, resume and cancel work from the run detail", async ({ chief, boot, page }) => {
   const effect = (ref: string) => ({ kind: "doc", ref, url: `https://example.test/${ref}`, how_to_undo: `delete ${ref}` });
   chief.importWorkflow(`
 name: ctl
@@ -195,7 +195,6 @@ nodes:
   - id: slow
     type: agent
     prompt: 'S ${fake({ sleep_ms: 60000 }, { output: { side_effects: [effect("t1")] } })}'
-    compensate: { prompt: 'UNDO ${fake({ output: { reverted: ["t1"], failed: [] } })}' }
 edges: [writer -> slow]
 `);
   const srv = await boot();
@@ -230,18 +229,7 @@ edges: [writer -> slow]
   await expect(tid(page, "btn-resume")).toHaveCount(0);
   await expect(tid(page, "btn-rerun")).toBeVisible();
   await expect(tid(page, "btn-delete-run")).toBeVisible();
-
-  await tid(page, "btn-revert").click();
-  // Same reason: a revert runs each step's compensation agent, which is engine work like the resume above.
-  await expect(tid(page, "run-status")).toHaveText("reverted", { timeout: 45_000 });
-  await expect(tid(page, "revert-report")).toContainText("Compensated: slow");
-  await expect(tid(page, "revert-report")).toContainText("side effects reverted: 1");
-  await expect(tid(page, "revert-manual")).toContainText("writer: doc d1");
-  await expect(tid(page, "revert-manual")).toContainText("node has no compensation");
-  await expect(tid(page, "revert-manual")).toContainText("how to undo: delete d1");
-  await expect(page.locator('[data-node-id="slow"][data-phase="compensate"]')).toHaveAttribute("data-status", "completed");
-  await expect(tid(page, "btn-revert")).toBeDisabled();
-  expect((await detail(srv, id)).run.status).toBe("reverted");
+  await expect(tid(page, "btn-revert")).toHaveCount(0);
 
   // Cancel a second, running run.
   const id2 = await startRun(srv, "ctl");
@@ -437,7 +425,6 @@ test("E6.5-3 edges and panel edits end up in the saved definition", async ({ chi
   await tid(page, "node-model").selectOption("sonnet");
   await tid(page, "node-tools").selectOption("read-only");
   await tid(page, "node-output-schema").fill('{"summary": "string", "items": [{"title": "string"}]}');
-  await tid(page, "node-compensate-prompt").fill("Undo: {{output.side_effects}}");
   await tid(page, "node-irreversible").check();
   await tid(page, "node-confirm").uncheck();
 
@@ -467,7 +454,7 @@ test("E6.5-3 edges and panel edits end up in the saved definition", async ({ chi
   const [plan, choose] = def.nodes;
   expect(plan).toMatchObject({
     id: "plan", type: "agent", prompt: "Summarise my Slack for {{inputs.who}}.", mcp: ["slack", "github-custom"], model: "sonnet", tools: "read-only",
-    "output-schema": { summary: "string", items: [{ title: "string" }] }, compensate: { prompt: "Undo: {{output.side_effects}}" }, irreversible: true, confirm: false,
+    "output-schema": { summary: "string", items: [{ title: "string" }] }, irreversible: true, confirm: false,
   });
   expect(choose).toMatchObject({ id: "choose", type: "gate", kind: "select", from: "{{nodes.plan.output.items}}", message: "Which ones?" });
   // Canvas positions are persisted with the nodes.
@@ -676,7 +663,7 @@ test("E6.5-7 the script panel shows the sandbox, cannot turn it off, and asks be
   await expect(tid(page, "approval-needed")).toHaveCount(0);
   stored = (await srv.api("GET", "/api/workflows/scripted")).body;
   expect(stored.approvals).toEqual([expect.objectContaining({ node_id: "job", approved: true })]);
-  await expect(tid(page, "validation-warnings")).toContainText("widens the sandbox without a `compensate`");
+  await expect(tid(page, "validation-warnings")).toHaveCount(0);
   const run = chief.run(["run", "scripted", "--json"]);
   expect(run.code, run.stdout + run.stderr).toBe(0);
   expect(run.json().node_runs[0].output).toEqual({ ok: true });

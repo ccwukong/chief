@@ -148,7 +148,6 @@ offers first; a section per block is a convention, not a requirement.
 | `{{inputs.name}}`, `{{inputs.params.prlink}}` | A run input, at any depth |
 | `{{nodes.<id>.output.<path>}}` | Output of an earlier node. Paths may go through objects and list indexes (`items.0.title`) |
 | `{{item}}`, `{{item.<path>}}` | The current element inside a `map` node |
-| `{{output.<path>}}`, `{{side_effects}}` | Inside `compensate` only: the node's own output and its recorded side effects |
 
 A value that is exactly one reference keeps its type, so `over: "{{nodes.plan.output.items}}"`
 passes the list itself. Inside longer text, objects and lists are inserted as JSON. A node can only
@@ -213,7 +212,6 @@ Run the agent CLI with a prompt.
 | `cwd` | Working directory (default: the directory of the workflow file) |
 | `timeout` | For example `10m`. Default 30 minutes |
 | `irreversible` | `true` if the node does something that cannot be undone. chief asks before running it; `confirm: false` skips that question |
-| `compensate` | How to undo this node, see "Undoing a run" |
 
 chief appends a short contract to every prompt. The agent must finish with a JSON block, list the
 writes it performed in `side_effects`, and return a question instead of writing when the prompt
@@ -222,7 +220,7 @@ tells it to ask first. You do not need to repeat any of that in your prompt.
 ### Agent CLIs
 
 `agent:` on the workflow or on a node picks the CLI; the `default-adapter` setting applies
-otherwise. They behave the same towards chief (sessions, gates, pause and resume, revert) and differ
+otherwise. They behave the same towards chief (sessions, gates, pause and resume) and differ
 in what the CLI itself allows:
 
 | `agent` | CLI | `mcp:` restriction | `tools: none` / `read-only` | `tools: default` or a list | Cost reported |
@@ -358,7 +356,7 @@ nodes:
 | `input` | The JSON sent on stdin. Default: `{ inputs, item }` |
 | `cwd`, `timeout` | Working directory (default: the workflow's directory), time limit (default 5 minutes) |
 | `sandbox` | Widen the sandbox, see below |
-| `irreversible`, `compensate` | As for agent nodes |
+| `irreversible` | As for agent nodes |
 
 A script can report writes the same way agents do, by including a `side_effects` list in its
 output.
@@ -387,7 +385,6 @@ nodes:
       network: true                 # allow network access
       write: [~/reports]            # extra writable directories
       env: [REPORT_API_TOKEN]       # extra environment variables to pass through
-    compensate: { run: scripts/remove-report.py }
 ```
 
 - A workflow with a widened node must be approved before it runs: `chief workflow approve <name>`.
@@ -505,34 +502,6 @@ change it in the designer if new runs should behave the same way.
 
 Steps can be changed only while the run is stopped: failed, paused, interrupted, or waiting at a
 gate.
-
-## Undoing a run
-
-`chief revert <run>` walks the completed nodes in reverse order and runs each node's `compensate`:
-
-```yaml
-name: compensate-example
-nodes:
-  - id: draft
-    type: agent
-    mcp: [google-drive]
-    prompt: Create a Google Doc titled "ADR draft" with a one-paragraph outline.
-    compensate:
-      prompt: "Move these documents to the trash: {{output.side_effects}}"
-  - id: announce
-    type: agent
-    mcp: [slack]
-    irreversible: true              # asks you before it runs; cannot be undone afterwards
-    prompt: Post "ADR draft is ready" in #architecture.
-edges: [draft -> announce]
-```
-
-- A compensation is either an agent `prompt` (run in a fresh session) or a script (`run`), which
-  receives `{ output, side_effects, item }` on stdin.
-- Nodes that changed nothing are skipped.
-- What cannot be undone automatically is listed as manual follow-up: effects marked irreversible,
-  effects of nodes without a compensation, and compensations that failed.
-- `chief revert <run> --to <node>` undoes only the nodes after that node.
 
 ## Budgets and cost
 

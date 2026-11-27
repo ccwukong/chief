@@ -11,7 +11,6 @@ import { RunDiagram } from "../run-diagram";
 import { describeInputsOf, getPath, mergeInputs } from "../run-inputs";
 import { usePolling, useReveal } from "../polling";
 import { Button } from "../components/ui/button";
-import { Select } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { Card } from "../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
@@ -107,8 +106,6 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
   const [d, setD] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);
-  const [report, setReport] = useState<any | null>(null);
-  const [revertTo, setRevertTo] = useState("");
   const [defaultAdapter, setDefaultAdapter] = useState("claude-code");
   const [openPending, setOpenPending] = useState<string | null>(null);
   /** Scrolls a row into view after it renders (see polling.ts). */
@@ -167,7 +164,7 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
   usePolling(look, stopped ? 3000 : 10_000);
 
   /**
-   * Pause, resume, cancel, revert. The button's spinner follows the request, not the page's reload: the
+   * Pause, resume, cancel. The button's spinner follows the request, not the page's reload: the
    * reload of a big run's record can take seconds, and awaiting it made Cancel look stuck after the
    * cancellation had already happened (task 15.23). The status above is what shows the run stopping; the
    * button reads "Cancelling…" while the server reports that a cancel was requested.
@@ -175,8 +172,7 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
   const act = async (action: string, body?: unknown) => {
     setError(null);
     try {
-      const r = await api("POST", `/api/runs/${id}/${action}`, body);
-      if (action === "revert") setReport(r);
+      await api("POST", `/api/runs/${id}/${action}`, body);
     } catch (e: any) {
       setError(e.message);
       return;
@@ -213,7 +209,6 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
   const loose = waiting.filter((g: any) => g.node_run_id == null || !stepIds.has(g.node_run_id));
   const inSteps = waiting.filter((g: any) => !loose.includes(g));
   const answered = () => { load(); setStreamKey((k) => k + 1); };
-  const topLevel: string[] = (run.definition?.nodes ?? []).map((n: any) => n.id);
   const children = (parentId: number) => d.node_runs.filter((n: any) => n.parent_node_run_id === parentId);
   const roots = d.node_runs.filter((n: any) => n.parent_node_run_id == null);
 
@@ -561,33 +556,6 @@ export function RunDetail({ id, panel = false }: { id: number; panel?: boolean }
               </TabsContent>
             )}
           </Tabs>
-        )}
-      </Card>
-
-      <Card className="mb-5">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold">Revert</span>
-          <Select className="w-56" data-testid="revert-to"  value={revertTo} onChange={(e) => setRevertTo(e.target.value)}>
-            <option value="">everything</option>
-            {topLevel.map((n) => <option key={n} value={n}>only what ran after “{n}”</option>)}
-          </Select>
-          <AsyncButton data-testid="btn-revert" variant="destructive" disabled={["pending", "running", "reverting", "reverted"].includes(s)} onClick={() => act("revert", revertTo ? { to: revertTo } : {})}>Revert run</AsyncButton>
-          <span className="text-xs text-slate-500">Runs each node’s compensation in reverse order.</span>
-        </div>
-        {report && (
-          <div data-testid="revert-report" className="rounded bg-slate-50 p-3 text-sm">
-            <div>Compensated: <b>{report.compensated.length ? report.compensated.join(", ") : "none"}</b> · side effects reverted: <b>{report.reverted_effects}</b></div>
-            {report.manual.length > 0 ? (
-              <>
-                <div className="mt-2 font-semibold text-red-800">Manual follow-up needed</div>
-                <ul data-testid="revert-manual" className="list-disc pl-5">
-                  {report.manual.map((m: any, i: number) => (
-                    <li key={i}>{m.node_id}{m.item_index != null ? `[${m.item_index}]` : ""}: {m.kind} {m.ref} {m.url && <a className="text-primary underline" href={m.url}>link</a>} — {m.reason}{m.how_to_undo ? ` (how to undo: ${m.how_to_undo})` : ""}</li>
-                  ))}
-                </ul>
-              </>
-            ) : <div className="mt-1 text-green-800" data-testid="revert-clean">Nothing left to undo by hand.</div>}
-          </div>
         )}
       </Card>
 

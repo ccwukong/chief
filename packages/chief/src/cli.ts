@@ -4,7 +4,6 @@
 import "./node-warnings.ts";
 import { writeFileSync } from "node:fs";
 import { answerGate, driveRun, EngineError, recover, requestCancel, requestPause, rerunRun, resumeRun, startRun } from "./engine/engine.ts";
-import { revertRun } from "./engine/saga.ts";
 import { defaultWorkspace, expandDir } from "./paths.ts";
 import { addSchedule, approveWorkflow, changeStep, cloneWorkflow, deleteRuns, setStepModel, doctor, ensureMcp, importFile, listModels, refreshMcp, runDetail, validateFull } from "./ops.ts";
 import { askAboutRun } from "./ask.ts";
@@ -38,7 +37,6 @@ Usage: chief <command> [options]        (add --json to any command for machine-r
   models [--adapter a]                    the models the agent CLI offers
   pause <id> | resume <id> | cancel <id>
   gate list [--all] | show <id> | answer <id> <json> | approve <id> [--value <json>] [--text t] | reject <id> [--text t]
-  revert <run> [--to <node>]
   schedule add <workflow> "<cron>" [--inputs-json <json>] | list | rm <id> | enable <id> | disable <id>
   settings get [key] | set <key> <json-value>
   serve [--port n] [--no-open]            start the HTTP server, web UI and scheduler (default port 8080) and open the web UI in your browser
@@ -478,20 +476,6 @@ async function main(): Promise<number> {
       else await sleep(100);
       printRun(store, gate.run_id);
       return exitCodeFor(store.getRun(gate.run_id)!);
-    }
-
-    case "revert": {
-      const id = num(sub, "run id");
-      const report = await revertRun(store, id, { to: typeof args.flags.to === "string" ? args.flags.to : undefined });
-      emit(report, () => {
-        const lines = [`run ${id} reverted`, `compensated: ${report.compensated.length ? report.compensated.join(", ") : "none"}`, `side effects reverted: ${report.reverted_effects}`];
-        if (report.manual.length) {
-          lines.push("", "Manual follow-up needed:");
-          for (const m of report.manual) lines.push(`  ${m.node_id}${m.item_index != null ? `[${m.item_index}]` : ""}: ${m.kind} ${m.ref ?? ""} ${m.url ?? ""} — ${m.reason}${m.how_to_undo ? ` (how to undo: ${m.how_to_undo})` : ""}`);
-        } else lines.push("nothing left to undo by hand");
-        return lines.join("\n");
-      });
-      return 0;
     }
 
     case "models": {

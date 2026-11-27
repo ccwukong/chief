@@ -220,13 +220,6 @@ export function validateWorkflow(raw: unknown): ValidationResult {
       const exec: any[] = n.type === "map" ? [n.node] : [n];
       for (const x of exec) {
         if (x.type === "agent") errors.push(...checkShorthand(x["output-schema"]).map((m) => `node "${n.id}": ${m}`));
-        if (x.type === "script") {
-          const sb = x.sandbox ?? {};
-          if ((sb.network || sb.write?.length) && !x.compensate) {
-            warnings.push(`node "${n.id}": widens the sandbox without a \`compensate\`; its effects will be listed as manual on revert`);
-          }
-        }
-        if (x.irreversible && x.compensate) warnings.push(`node "${n.id}": marked irreversible but declares a compensation`);
       }
       if (n.type === "gate" && n.kind === "select" && n.from === undefined) errors.push(`node "${n.id}": a select gate needs \`from\``);
       if (n.type === "gate" && n.kind === "ask" && !n.prompt?.trim()) errors.push(`node "${n.id}": an ask gate needs \`prompt\`: describe in plain words what you should be asked`);

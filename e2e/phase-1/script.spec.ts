@@ -289,8 +289,9 @@ test("E1.5a-13 without a sandbox backend, script nodes are disabled", ({ chief }
   expect(chief.run(["run", "agents-only"], { env }).code).toBe(0);
 });
 
-test("E1.5a-14 widening the sandbox without a compensation is flagged", ({ chief }) => {
+test("E1.5a-14 widening the sandbox does not ask for a compensation", ({ chief }) => {
   const f = chief.file("warn.yaml", "name: warn\nnodes:\n  - { id: s, type: script, run: x.sh, sandbox: { network: true } }\n");
   const v = chief.run(["workflow", "validate", f, "--json"]).json();
-  expect(v.warnings.join("\n")).toContain("widens the sandbox without a `compensate`; its effects will be listed as manual on revert");
+  expect(v.warnings.join("\n")).not.toContain("compensate");
+  expect(v.warnings.join("\n")).not.toContain("revert");
 });

@@ -331,7 +331,6 @@ nodes:
     type: agent
     prompt: 'plan ${fake({ output: { items: ["one", "two"], side_effects: [{ kind: "doc", ref: "plan-doc" }] } })}'
     output-schema: { items: [string] }
-    compensate: { prompt: 'UNDO-PLAN ${fake({ output: { reverted: ["plan-doc"], failed: [] } })}' }
   - { id: ok, type: gate, kind: approve, value: "{{nodes.plan.output.items}}" }
   - id: act
     type: map
@@ -355,16 +354,13 @@ function runConformance(chief: Chief, adapter: string) {
     trace.push(show(chief, id).run.status);
   }
   const done = show(chief, id);
-  const report = chief.run(["revert", String(id), "--json"], { env: BOTH }).json();
-  const final = show(chief, id);
   return {
     trace,
     nodes: done.node_runs.map((n: any) => [n.node_id, n.item_index, n.status, n.output && (n.output.done ?? n.output.items ?? n.output.value ?? n.output.length)]),
     gates: done.gates.map((g: any) => [g.kind, g.reason, g.status]),
     invocations: done.node_runs.map((n: any) => n.usage?.invocations ?? null),
-    effects: final.side_effects.map((e: any) => [e.kind, e.ref, e.irreversible, !!e.reverted_at]),
-    report: { compensated: report.compensated, reverted: report.reverted_effects, manual: report.manual.map((m: any) => [m.node_id, m.item_index, m.reason]) },
-    status: final.run.status,
+    effects: done.side_effects.map((e: any) => [e.kind, e.ref, e.irreversible]),
+    status: done.run.status,
     sessionsResumed: chief.calls().filter((c) => c.resume).length,
   };
 }
@@ -384,9 +380,8 @@ test("E7.3-1 conformance: the same workflow behaves identically on every adapter
     nodes: [["plan", null, "completed", ["one", "two"]], ["ok", null, "completed", ["one", "two"]], ["act", null, "completed", 2], ["act-item", 0, "completed", true], ["act-item", 1, "completed", true]],
     gates: [["approve", "node", "consumed"], ["approve", "needs_input", "consumed"], ["approve", "needs_input", "consumed"]],
     invocations: [1, null, null, 3, 3],
-    effects: [["doc", "plan-doc", 0, true], ["comment", "c", 1, false], ["comment", "c", 1, false]],
-    report: { compensated: ["plan"], reverted: 1, manual: [["act-item", 1, "irreversible"], ["act-item", 0, "irreversible"]] },
-    status: "reverted",
+    effects: [["doc", "plan-doc", 0], ["comment", "c", 1], ["comment", "c", 1]],
+    status: "completed",
     sessionsResumed: 4,
   };
   for (const adapter of ADAPTERS) expect(results[adapter], adapter).toEqual(expected);

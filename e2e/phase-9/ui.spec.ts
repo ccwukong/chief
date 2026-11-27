@@ -899,7 +899,7 @@ test("E9.11-1 settings that need explaining have a help tooltip with an example"
   await shows("model", "The list comes from the agent CLI itself");
   await shows("tools", "read-only");
   await shows("output-schema", '"summary": "string"');
-  await shows("compensate-prompt", "Used only when you revert a run");
+  await expect(tid(page, "help-compensate-prompt")).toHaveCount(0);
   // The step's Id needs no "?": its rule and the placeholder it appears in are printed under the field,
   // and they follow the field (reported 2026-11-21: "the hint text should follow the same standard").
   await expect(tid(page, "help-node-id")).toHaveCount(0);
@@ -1289,7 +1289,7 @@ test("E9.18-1 everything clickable shows the hand cursor", async ({ chief, boot,
   await expect(tid(page, "run-row-1")).toBeVisible();
   expect(await cursor("run-row-1")).toBe("pointer");
   await tid(page, "run-row-1").click();
-  for (const id of ["btn-pause", "btn-cancel", "gate-approve", "gate-reject", "btn-revert", "revert-to", "replay-next", "replay-node"]) expect(await cursor(id), id).toBe("pointer");
+  for (const id of ["btn-pause", "btn-cancel", "gate-approve", "gate-reject", "replay-next", "replay-node"]) expect(await cursor(id), id).toBe("pointer");
   // Resume is not drawn while the run is going, rather than drawn and disabled (task 15.90).
   await expect(tid(page, "btn-resume")).toHaveCount(0);
   expect(await cursorOf('[data-testid="replay"] summary')).toBe("pointer");

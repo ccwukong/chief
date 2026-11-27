@@ -182,7 +182,7 @@ Work proceeds phase by phase, in the order of `docs/dev-plan.md` §7.
   workflow, a conversation: `TrashButton` from `packages/web/src/ui.tsx` — a drawn glyph, slate at
   rest and `--destructive` on hover, `aria-label` and `title` carrying the name because a glyph has
   none. A `variant="destructive"` button is for **confirming** one of those in a dialog, or for an
-  action with a consequence that is not a deletion (Cancel a run, Revert a run, Reject a gate) — never
+  action with a consequence that is not a deletion (Cancel a run, Reject a gate) — never
   as the trigger that removes a thing. A page is for reading; the removal control must not be the
   loudest thing on it (asked 2026-11-22, three times from three pages).
 - **Choices that come from an agent CLI are dropdowns filled from that CLI** (models, MCP

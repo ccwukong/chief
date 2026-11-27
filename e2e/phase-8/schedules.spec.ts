@@ -135,7 +135,7 @@ test("E8.3-1 README, workflow guide and adapter notes exist and match the produc
 
   // Every node field the guide documents in its field tables is accepted by the schema.
   const guide = read("docs/workflow-guide.md");
-  for (const field of ["output-schema", "max-parallel", "on-error", "allowed-tools", "disallowed-tools", "permission-mode", "irreversible", "compensate", "sandbox"]) expect(guide, field).toContain("`" + field + "`");
+  for (const field of ["output-schema", "max-parallel", "on-error", "allowed-tools", "disallowed-tools", "permission-mode", "irreversible", "sandbox"]) expect(guide, field).toContain("`" + field + "`");
 });
 
 test("E8.3-2 every workflow example in the authoring guide validates", ({ chief }) => {

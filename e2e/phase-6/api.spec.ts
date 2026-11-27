@@ -77,11 +77,11 @@ test("E6.1-2 workflows over REST: save, validate, export, delete", async ({ chie
   } finally { await s.stop(); }
 });
 
-test("E6.1-3 runs over REST: start, gate, pause, resume, cancel, revert", async ({ chief }) => {
+test("E6.1-3 runs over REST: start, gate, pause, resume, cancel", async ({ chief }) => {
   const s = await chief.serve();
   try {
     await s.api("PUT", "/api/workflows/flow", { base_dir: chief.dir, definition: def("flow", [
-      agent("write", `W ${fake({ output: { side_effects: [{ kind: "doc", ref: "d1" }] } })}`, { compensate: { prompt: `UNDO ${fake({ output: { reverted: ["d1"], failed: [] } })}` } }),
+      agent("write", `W ${fake({ output: { side_effects: [{ kind: "doc", ref: "d1" }] } })}`),
       { id: "ok", type: "gate", kind: "approve", value: "{{inputs.msg}}" },
       agent("slow", `S {{nodes.ok.output.value}} ${fake({ sleep_ms: 60000 }, { output: { done: true } })}`),
     ], ["write -> ok", "ok -> slow"]) });
@@ -107,11 +107,7 @@ test("E6.1-3 runs over REST: start, gate, pause, resume, cancel, revert", async 
     expect((await s.api("POST", `/api/runs/${id}/resume`)).status).toBe(200);
     d = await runStatus(s, id, "completed");
     expect(chief.calls()[2].resume).toBe(chief.calls()[1].session);
-
-    const report = await s.api("POST", `/api/runs/${id}/revert`, {});
-    expect(report.status).toBe(200);
-    expect(report.body).toMatchObject({ compensated: ["write"], reverted_effects: 1, manual: [] });
-    expect((await s.api("GET", `/api/runs/${id}`)).body.run.status).toBe("reverted");
+    expect((await s.api("POST", `/api/runs/${id}/revert`, {})).status).toBe(404);
 
     // Cancel a second run while its agent is working.
     const second = (await s.api("POST", "/api/runs", { workflow: "flow", inputs: { msg: "x" } })).body.run.id;

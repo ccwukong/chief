@@ -13,7 +13,7 @@ import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 
 /** The API level this page was built for (see API_LEVEL in the server). */
-const REQUIRED_API = 17;
+const REQUIRED_API = 18;
 
 /**
  * The rail's destinations, in Figma's order: the working pages, then a divider, then the settings at the bottom.

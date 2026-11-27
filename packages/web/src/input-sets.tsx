@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, get, getPage } from "./api";
 import { AsyncButton, ErrorBox, Help, PanelResizeHandle, readDraft, removeDraft, useRightPanelResize, writeDraft } from "./ui";
-import { blankInputs, InputFormWithJson, missingRequired, parseInputs, type InputField } from "./run-inputs";
+import { InputFormWithJson, parseInputs, unfilledInputs, type InputField } from "./run-inputs";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Select } from "./components/ui/select";
@@ -75,18 +75,20 @@ export function WorkflowPanel({ workflows, selected, onSelect, open, setOpen }: 
   );
   if (!open) return strip;
   /**
-   * One workflow: its name, and what is in it. **One line, one control height** — two lines made it taller than the
-   * 40 px every other button obeys (E15.72-1 caught it), and a column of cards taller than a row of text is a column
-   * that pushes the list it filters off the page.
+   * One workflow: its name, then how many sets it has. The name wraps, because the column is 224 px and a count on
+   * the same line was cutting it to "em-daily-opera…" (reported 2026-11-27: *"Unable to view the full name"*).
+   * The card grows with the name; the column scrolls, so a taller card does not push the page.
    */
   const card = (name: string, label: string, detail: string, testid: string, isOn: boolean) => (
     <Button variant="ghost" type="button" data-testid={testid} data-selected={isOn} aria-current={isOn ? "true" : undefined}
-      onClick={() => onSelect(name)} title={`${label}${detail ? ` · ${detail}` : ""}`}
-      className={`h-auto w-full justify-start gap-2 rounded-md border px-2 py-1.5 text-left font-normal ${isOn
+      onClick={() => onSelect(name)} title={detail ? `${label} · ${detail}` : label}
+      className={`h-auto w-full items-start justify-start whitespace-normal rounded-md border px-2 py-1.5 text-left font-normal ${isOn
         ? "border-slate-800 bg-slate-50 text-slate-900 shadow-xs ring-1 ring-slate-800"
         : "border-slate-200 bg-surface text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
-      <span className={`min-w-0 flex-1 truncate text-sm ${isOn ? "font-semibold" : ""}`}>{label}</span>
-      {detail && <span className="shrink-0 text-2xs text-slate-500">{detail}</span>}
+      <span className="min-w-0 flex-1">
+        <span data-workflow-name className={`block whitespace-normal break-words text-sm leading-5 ${isOn ? "font-semibold" : ""}`}>{label}</span>
+        {detail && <span className="mt-0.5 block text-2xs leading-4 text-slate-500">{detail}</span>}
+      </span>
     </Button>
   );
   const count = (n: number) => `${n} ${n === 1 ? "input data set" : "input data sets"}`;
@@ -271,10 +273,10 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
   }, [draftBase, text, creating, workflow]);
 
   const parsed = parseInputs(text);
-  const missing = missingRequired(fields, parsed ?? {});
-  // A blank the prompts read is refused by the engine, so it disables Start too, or the panel offers a refused run.
-  const blank = blankInputs(fields, parsed ?? {});
-  const cannotStart = missing.length > 0 || blank.length > 0;
+  // Ready means every field has a value in this set. A workflow default does not fill the gap: that is how a set
+  // with nothing prepared was offered as ready (reported 2026-11-27).
+  const gaps = unfilledInputs(fields, parsed ?? {});
+  const cannotStart = gaps.length > 0;
   /**
    * The name to store: what is in the field, or empty — the **server** names a nameless set after the workflow and the
    * day, uniquely, because only it can see what is taken.
@@ -366,8 +368,7 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
             {state === "error" ? "Not saved"
               : creating ? "Not saved yet"
               : state === "saving" ? "Saving…"
-              : missing.length ? `Saved · still needed: ${missing.map((f) => f.label).join(", ")}`
-              : blank.length ? `Saved · still empty: ${blank.join(", ")}`
+              : gaps.length ? `Saved · still needed: ${gaps.map((f) => f.label).join(", ")}`
               : "Saved"}
           </span>
           <Button variant="ghost" className="h-7 w-7 px-0 text-slate-500" type="button" data-testid="input-set-close" aria-label="Close" title="Close (Escape)" onClick={() => void close()}>
@@ -409,7 +410,7 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
               </span>
             )}
             <Button variant="link" size="sm" className="h-auto px-0 text-2xs" type="button" data-testid="input-set-inputs-shape"
-              title="Empty every value: a field left empty keeps the workflow's own value when the run starts" onClick={() => setText("{}")}>Clear the values</Button>
+              title="Empty every value. The set is not ready to run until each field has its own value" onClick={() => setText("{}")}>Clear the values</Button>
           </div>
           <InputFormWithJson fields={fields} text={text} setText={setText} stem="new-run-inputs" />
         </div>
@@ -430,7 +431,7 @@ export function InputSetPanel({ id, existing, workflows, defaultWorkflow, blocke
             </>
           ) : (
             <AsyncButton data-testid="input-set-start" variant="default" busy={state === "saving"} disabled={!parsed || cannotStart || !!blocked}
-              title={blocked?.why ?? (missing.length ? `Still needed: ${missing.map((f) => f.label).join(", ")}` : blank.length ? `Still empty: ${blank.join(", ")}` : undefined)}
+              title={blocked?.why ?? (gaps.length ? `Still needed: ${gaps.map((f) => f.label).join(", ")}` : undefined)}
               onClick={start}>Start run</AsyncButton>
           )}
           <span className="min-w-0 text-xs text-slate-500" data-testid="input-set-hint">

@@ -115,6 +115,28 @@ export function missingInputs(def: any, inputs: unknown): string[] {
   return inputRefs(def).filter((path) => !lookup(inputs, path.split(".")).found);
 }
 
+/**
+ * Whether `given` itself answers `path`. A workflow default is not an answer: an input data set exists to hold
+ * the values for one run, and a default is the sample stored on the workflow. `0` and `false` count; an empty
+ * text does not.
+ */
+export function inputAnswered(given: unknown, path: string): boolean {
+  const r = lookup(given ?? {}, path.split("."));
+  return r.found && r.value !== "" && r.value != null;
+}
+
+/** Every field the form asks for that `given` has not answered. Order is the form's order. */
+export function unansweredInputs(def: any, given: unknown): InputField[] {
+  return describeInputs(def).filter((f) => !inputAnswered(given, f.path));
+}
+
+/** Why a run from an input data set is refused: the set has not answered fields the workflow asks for. */
+export function unansweredInputsMessage(what: string, fields: InputField[]): string {
+  const list = fields.map((f) => `“${f.label}” (inputs.${f.path})`).join(", ");
+  const one = fields.length === 1;
+  return `cannot ${what}: ${one ? "a field still has" : "fields still have"} no value in this input data set: ${list}. Fill ${one ? "it" : "them"} in before starting. The workflow's own default is not a value this set has prepared`;
+}
+
 /** Dotted paths in `inputs` that end in the same name as `path`: the likely intended place of a value that was not found. */
 export function similarInputs(inputs: unknown, path: string): string[] {
   const name = path.split(".").pop()!;

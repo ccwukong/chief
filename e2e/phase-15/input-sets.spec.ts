@@ -26,6 +26,13 @@ nodes:
 test("E15.122-1 a set is stored incomplete, started when it is ready, and a run keeps its own copy", async ({ chief }) => {
   expect(chief.importWorkflow(REVIEW).code).toBe(0);
   expect(chief.importWorkflow("name: other\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'hi' }\n").code).toBe(0);
+  // Every field has a default and none is required: the shape that marked an empty set ready (2026-11-27).
+  expect(chief.importWorkflow(`
+name: yearend
+inputs: { engineer: Lan, notes: "paste the notes" }
+nodes:
+  - { id: collect, type: agent, mcp: [], prompt: 'Review {{inputs.engineer}} — {{inputs.notes}} ${fake({ output: { ok: true } })}' }
+`).code).toBe(0);
   const s = await chief.serve();
   try {
     // Stored **incomplete**, and that is not an error: a set is prepared over days.
@@ -51,16 +58,23 @@ test("E15.122-1 a set is stored incomplete, started when it is ready, and a run 
     expect(list.body).toHaveLength(1);
     expect(chief.calls()).toHaveLength(0);
 
-    // Readiness follows the **same** rule the start applies.
-    const filled = await s.api("PATCH", `/api/input-sets/${id}`, { values: { engineer: "Ana" } });
-    expect(filled.body).toMatchObject({ ready: true, filled: 1, fields: 2 });
+    // One field answered is not ready: `hours` still has only the workflow's default, and a default is not this set's value.
+    const half = await s.api("PATCH", `/api/input-sets/${id}`, { values: { engineer: "Ana" } });
+    expect(half.body).toMatchObject({ ready: false, filled: 1, fields: 2, missing: ["hours"], missingRequired: [] });
+    const refused = await s.api("POST", "/api/runs", { workflow: "perf-review", input_set: id });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain("Hours back");
+
+    // Both fields answered: ready, and the start uses the set, not the workflow's 24.
+    const filled = await s.api("PATCH", `/api/input-sets/${id}`, { values: { engineer: "Ana", hours: 24 } });
+    expect(filled.body).toMatchObject({ ready: true, filled: 2, fields: 2 });
 
     // Starting from it: its values are the run's, and the run says which set it came from.
     const run = await s.api("POST", "/api/runs", { workflow: "perf-review", input_set: id });
     expect(run.status, JSON.stringify(run.body)).toBe(201);
     expect(run.body.run.input_set_id).toBe(id);
     expect(run.body.run.input_set_name).toBe("Ana · 2026 review");
-    expect(run.body.run.inputs).toEqual({ engineer: "Ana" });
+    expect(run.body.run.inputs).toEqual({ engineer: "Ana", hours: 24 });
     await chief.until(async () => (await s.api("GET", `/api/runs/${run.body.run.id}`)).body.run.status === "completed");
     expect(chief.calls()[0].prompt).toContain("Review Ana over 24h");
 
@@ -68,7 +82,7 @@ test("E15.122-1 a set is stored incomplete, started when it is ready, and a run 
     await s.api("PATCH", `/api/input-sets/${id}`, { name: "Ana · 2027 review", values: {} });
     await s.api("DELETE", `/api/input-sets/${id}`);
     const after = (await s.api("GET", `/api/runs/${run.body.run.id}`)).body.run;
-    expect(after.inputs).toEqual({ engineer: "Ana" });
+    expect(after.inputs).toEqual({ engineer: "Ana", hours: 24 });
     expect(after.input_set_name).toBe("Ana · 2026 review");
     expect((await s.api("GET", "/api/input-sets")).body).toEqual([]);
 
@@ -77,6 +91,26 @@ test("E15.122-1 a set is stored incomplete, started when it is ready, and a run 
     const wrong = await s.api("POST", "/api/runs", { workflow: "perf-review", input_set: other.body.id });
     expect(wrong.status).toBe(400);
     expect(wrong.body.error).toContain("other");
+
+    // Reported 2026-11-27: a set with nothing filled was `ready`, because every field had a default on the workflow
+    // (another person's review text). The default does not count, and the start is refused.
+    const empty = await s.api("POST", "/api/input-sets", { workflow: "yearend", name: "Kristi", values: {} });
+    expect(empty.status).toBe(201);
+    expect(empty.body).toMatchObject({ ready: false, filled: 0, fields: 2, missingRequired: [] });
+    expect(empty.body.missing).toEqual(["engineer", "notes"]);
+    const blocked = await s.api("POST", "/api/runs", { workflow: "yearend", input_set: empty.body.id });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error).toContain("engineer");
+    const hers = await s.api("PATCH", `/api/input-sets/${empty.body.id}`, { values: { engineer: "Kristi", notes: "her notes" } });
+    expect(hers.body.ready).toBe(true);
+    const kristi = await s.api("POST", "/api/runs", { workflow: "yearend", input_set: empty.body.id });
+    expect(kristi.status, JSON.stringify(kristi.body)).toBe(201);
+    await chief.until(async () => (await s.api("GET", `/api/runs/${kristi.body.run.id}`)).body.run.status === "completed");
+    const calls = chief.calls();
+    const prompt = calls[calls.length - 1].prompt;
+    expect(prompt).toContain("Kristi");
+    expect(prompt).toContain("her notes");
+    expect(prompt).not.toContain("Lan");
   } finally { await s.stop(); }
 });
 
@@ -134,7 +168,8 @@ test("E15.122-2 the side panel saves as you type: no Save button, and the list a
     await expect(tid(page, "input-set-row-1")).toBeVisible();
     await expect(tid(page, "workflow-panel-perf-review")).toContainText("1 input data set");
     await expect(tid(page, "input-set-filled-1")).toHaveText("1 of 2 fields");
-    await expect(tid(page, "input-set-ready-1")).toContainText("ready");
+    await expect(tid(page, "input-set-ready-1")).toContainText("needs");
+    await expect(tid(page, "input-set-start")).toBeDisabled();
     expect((await srv.api("GET", "/api/input-sets/1")).body.values).toMatchObject({ engineer: "Ana" });
     // The panel stays open: that is where the person is working.
     await expect(panel).toBeVisible();
@@ -142,6 +177,8 @@ test("E15.122-2 the side panel saves as you type: no Save button, and the list a
     // An **existing** set saves its edits by itself: there is no Save on it, which is the rule this app has everywhere.
     await tid(page, "new-run-inputs-hours-input").fill("48");
     await expect.poll(async () => (await srv.api("GET", "/api/input-sets/1")).body.values, { timeout: 5000 }).toMatchObject({ hours: 48 });
+    await expect(tid(page, "input-set-ready-1")).toContainText("ready");
+    await expect(tid(page, "input-set-start")).toBeEnabled();
 
     // Start run is the one action, and the run page says which set it was prepared as.
     await tid(page, "input-set-start").click();
@@ -165,7 +202,7 @@ test("E15.122-3 a set keeps its own copy for a run, and removing it leaves that 
   const srv = await chief.serve();
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
-    expect((await srv.api("POST", "/api/input-sets", { workflow: "perf-review", name: "Ana", values: { engineer: "Ana" } })).status).toBe(201);
+    expect((await srv.api("POST", "/api/input-sets", { workflow: "perf-review", name: "Ana", values: { engineer: "Ana", hours: 24 } })).status).toBe(201);
 
     // A run started from it **through the API**, so this case is about the copy and not about the panel's own start.
     const started = await srv.api("POST", "/api/runs", { workflow: "perf-review", input_set: 1 });
@@ -203,6 +240,8 @@ test("E15.124-1 the Runs page opens on its input data, with the workflow column 
   // view, with past runs behind the second tab.
   expect(chief.importWorkflow(REVIEW).code).toBe(0);
   expect(chief.importWorkflow("name: other\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'hi' }\n").code).toBe(0);
+  const LONG = "em-daily-operations-and-the-weekly-brief";
+  expect(chief.importWorkflow(`name: ${LONG}\nnodes:\n  - { id: a, type: agent, mcp: [], prompt: 'hi' }\n`).code).toBe(0);
   const srv = await chief.serve();
   try {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -221,6 +260,15 @@ test("E15.124-1 the Runs page opens on its input data, with the workflow column 
     await expect(tid(page, "workflow-panel-all")).toBeVisible();
     await expect(tid(page, "workflow-panel-perf-review")).toContainText("perf-review");
     await expect(tid(page, "workflow-panel-perf-review")).toContainText("0 input data sets");
+    // A long name is shown in full: the count sits under it, and the name wraps instead of ending in an ellipsis
+    // (reported 2026-11-27: *"Unable to view the full name of the workflow"*).
+    const longName = await tid(page, `workflow-panel-${LONG}`).locator("[data-workflow-name]").evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { text: el.textContent, clipped: el.scrollWidth - el.clientWidth, ellipsis: s.textOverflow };
+    });
+    expect(longName.text).toBe(LONG);
+    expect(longName.ellipsis, "the name is not cut off").not.toBe("ellipsis");
+    expect(longName.clipped, "the name fits the card").toBeLessThanOrEqual(1);
     await expect(tid(page, "workflow-panel-new")).toHaveAttribute("href", "#/designer");
     await expect(tid(page, "workflow-panel-manage")).toHaveCount(0);
 

@@ -200,7 +200,7 @@ export function ConfirmDeleteRuns({ ids, onDone, onClose }: { ids: number[]; onD
     <Modal title={one ? `Delete run #${ids[0]}?` : `Delete ${ids.length} runs?`} onClose={onClose} testid="confirm-delete">
       <ErrorBox error={error} testid="confirm-delete-error" />
       <p className="mb-2 text-sm">{one ? "The run and everything recorded for it" : "These runs and everything recorded for them"} (steps, gate answers, side effects, the replay) will be deleted. <b>This cannot be undone.</b></p>
-      <p className="mb-4 text-sm text-slate-600">What {one ? "the run" : "they"} changed outside chief stays as it is. To undo it, revert {one ? "the run" : "each run"} before deleting.</p>
+      <p className="mb-4 text-sm text-slate-600">What {one ? "the run" : "they"} changed outside chief — a message sent, a document written — stays as it is. Deleting the run removes the record only.</p>
       <div className="flex justify-end gap-2">
         <Button variant="outline" data-testid="confirm-delete-keep"  disabled={busy} onClick={onClose}>Keep</Button>
         <AsyncButton data-testid="confirm-delete-yes" variant="destructive" busy={busy} onClick={confirm}>{one ? "Delete run" : `Delete ${ids.length} runs`}</AsyncButton>

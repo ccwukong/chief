@@ -26,7 +26,7 @@ export const addServersHint = (adapter: string) => ADD_SERVERS[adapter] ?? "the 
 type Change = (patch: Record<string, any>) => void;
 
 /** What "Refine" needs to know about a prompt field: what the text is for, which agent CLI rewrites it, and a key for keeping the author's own text. */
-interface RefineSpec { kind: "agent" | "gate" | "compensate"; adapter: string; model?: string; id: string }
+interface RefineSpec { kind: "agent" | "gate"; adapter: string; model?: string; id: string }
 
 function Txt({ label, value, onChange, testid, area, hint, placeholder, help, refine }: { label: string; value: any; onChange: (v: string) => void; testid: string; area?: number; hint?: string; placeholder?: string; help?: string; refine?: RefineSpec }) {
   return (
@@ -216,7 +216,6 @@ function AgentFields({ node, change, servers: byAgent, p, adapter, adapters }: {
       <Field label="Output schema (JSON shorthand)" help="output-schema" hint='e.g. {"summary": "string", "items": [{"title": "string"}]}'>
         <JsonField testid={`${p}output-schema`} value={node["output-schema"]} onChange={(v) => change({ "output-schema": v })} />
       </Field>
-      <Txt label="Compensation prompt (how to undo this node)" help="compensate-prompt" testid={`${p}compensate-prompt`} area={3} value={node.compensate?.prompt} onChange={(v) => change({ compensate: v.trim() ? { ...(node.compensate ?? {}), prompt: v, run: undefined } : undefined })} hint="May use {{output.side_effects}}" />
       <Irreversible node={node} change={change} p={p} />
     </>
   );
@@ -240,7 +239,6 @@ function ScriptFields({ node, change, p }: { node: any; change: Change; p: strin
         <Txt label="Extra writable paths (one per line)" help="sandbox-write" testid={`${p}sandbox-write`} area={2} value={(sb.write ?? []).join("\n")} onChange={(v) => setSb({ write: lines(v) })} hint="Protected paths can never be granted." />
         <Txt label="Environment variables to pass through" help="sandbox-env" testid={`${p}sandbox-env`} value={(sb.env ?? []).join(", ")} onChange={(v) => setSb({ env: lines(v) })} placeholder="GITHUB_TOKEN" />
       </div>
-      <Txt label="Compensation script (how to undo this node)" help="compensate-run" testid={`${p}compensate-run`} value={node.compensate?.run} onChange={(v) => change({ compensate: v.trim() ? { run: v } : undefined })} />
       <Irreversible node={node} change={change} p={p} />
     </>
   );

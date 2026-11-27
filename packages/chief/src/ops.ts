@@ -14,8 +14,7 @@ import { TERMINAL_RUN, type WorkflowRow } from "./store/types.ts";
 import { executableNodes, parseText, validateWorkflow } from "./workflow/load.ts";
 import type { Workflow } from "./workflow/schema.ts";
 import { estimateTokens } from "./workflow/template.ts";
-import { mergeInputs, missingInputs, missingInputsMessage, missingRequired, requiredFieldsMessage, describeInputs } from "./workflow/inputs.ts";
-import { lookup } from "./workflow/template.ts";
+import { mergeInputs, missingInputs, missingInputsMessage, missingRequired, requiredFieldsMessage, describeInputs, inputAnswered, unansweredInputs } from "./workflow/inputs.ts";
 import { parseCron } from "./util/cron.ts";
 
 /** Operations shared by the CLI and the HTTP server. */
@@ -281,23 +280,26 @@ export function addSchedule(store: Store, workflowName: string, cron: string, in
 // ── input data sets: input values prepared over days, used when a run is started (15.122) ──────
 
 /**
- * Whether an input data set can start, and what is missing if it cannot: the **same** two rules `startRun` applies,
- * read against the merged inputs, so one cannot be offered as ready and then refused on the click. Shared by the list,
- * the editor and the start, so what the page shows and what the engine does cannot disagree.
+ * Whether an input data set can start, and what is still empty if it cannot. Judged on **the set's own values**.
+ * A workflow default does not count: it is the sample stored on the workflow, and counting it made a set with
+ * nothing prepared look ready (reported 2026-11-27 — three year-end sets read `0 of 5 fields` and `ready`,
+ * because the workflow's `inputs` held another person's text for every field). A run started without a set
+ * still uses those defaults; a run started from a set does not, and is refused while anything is unanswered,
+ * so the list cannot offer a start the click then refuses.
  */
 export function readiness(wf: { definition: any }, values: Record<string, unknown>) {
-  const merged = mergeInputs(wf.definition?.inputs, values);
-  const required = missingRequired(wf.definition, merged);
-  const missing = missingInputs(wf.definition, merged);
   const fields = describeInputs(wf.definition);
+  const unanswered = unansweredInputs(wf.definition, values);
+  const required = unanswered.filter((f) => f.declared && f.required);
+  const requiredPaths = new Set(required.map((f) => f.path));
   return {
-    ready: required.length === 0 && missing.length === 0,
+    ready: unanswered.length === 0,
     missingRequired: required.map((f) => ({ path: f.path, label: f.label })),
-    missing: missing,
+    missing: unanswered.filter((f) => !requiredPaths.has(f.path)).map((f) => f.path),
     /** How many of the fields the page asks for are answered **by this set**: what a person has filled in so far. A
      *  workflow's own default is not counted — it is not something anybody prepared, and a new set starts empty. */
     fields: fields.length,
-    filled: fields.filter((f) => { const r = lookup(isObject(values) ? values : {}, f.path.split(".")); return r.found && r.value !== "" && r.value != null; }).length,
+    filled: fields.filter((f) => inputAnswered(values, f.path)).length,
   };
 }
 
@@ -381,11 +383,10 @@ export function setSchedule(store: Store, scheduleId: number, patch: { cron?: st
   return store.schedule(scheduleId)!;
 }
 
-/** Run detail as shown by `chief runs show` and the web UI. */
+/** How a prompt is rewritten, by the kind of text the person typed. */
 const REFINE: Record<string, string> = {
   agent: "The text is the prompt of one step of an automated workflow. An agent carries it out unattended: it cannot ask the author anything while it works, and it is given the results of earlier steps automatically.",
   gate: "The text is an instruction for a checkpoint of an automated workflow. It describes, in plain words, what the person running the workflow should be asked at that point; another agent turns it into a form.",
-  compensate: "The text is the prompt that undoes what one step of an automated workflow did. An agent carries it out unattended when the run is reverted.",
   /**
    * A message typed into chief bot's chat box — a question, or an instruction to answer, build or change a workflow,
    * or add or change a schedule (asked 2026-11-23: *"my random thoughts or words can be rephrased in a better
@@ -575,6 +576,7 @@ export function deleteRuns(store: Store, ids: number[]): { deleted: number[] } {
   return { deleted: unique };
 }
 
+/** Run detail as shown by `chief runs show` and the web UI. */
 export function runDetail(store: Store, runId: number) {
   const run = store.getRun(runId);
   if (!run) throw new EngineError(`run ${runId} not found`);

@@ -39,12 +39,12 @@ workflow, run on a schedule, and paused for your say before anything leaves your
 Describe the workflow to **chief bot** or draw it as a graph of steps. chief runs each step with the
 agent CLI you already use (Claude Code, Antigravity or OpenCode; Codex, Cursor and Hermes
 experimentally), waits at the points where you want a say, records everything that was sent and
-received, tracks what each step cost, and can undo what a run changed. A step is whatever agent CLI
+received, and tracks what each step cost. A step is whatever agent CLI
 you point it at: the six adapters today are coding agents plus Hermes Agent, and another adapter
 needs nothing in the engine.
 
 - **chief owns** the workflow, the run, a full record of every run, the questions to you (gates),
-  token and cost accounting, and pause, resume and revert.
+  token and cost accounting, and pause, resume and cancel.
 - **The agent CLI owns** model access, connections to other services through MCP servers (Slack,
   GitHub, Jira, Google Drive, …) and running tools. chief has no MCP configuration of its own: it
   uses the servers your CLI is connected to and only tells the CLI which of them a step may use.
@@ -259,8 +259,8 @@ one that would be refused is refused with the reason, before anything is written
 | **Script step** | Runs a local script in a sandbox. Its input arrives on stdin |
 | **Gate** | The run waits for you. Either describe in plain words what you want to be asked (`ask`: a form is worked out from your instruction and the earlier results), or use a fixed form: pick from a list, approve, or type feedback |
 | **Map** | Repeats a step for every item of a list |
-| **Run** | One execution of a workflow. It can be paused, resumed, cancelled and reverted |
-| **Side effect** | A write a step reports (a comment posted, a document created). `chief revert` works from this list |
+| **Run** | One execution of a workflow. It can be paused, resumed and cancelled |
+| **Side effect** | A write a step reports (a comment posted, a document created), kept in the run's record |
 | **Run record** | Everything a run sent and received, in order. Kept for every run |
 
 Three things that are easy to get wrong:
@@ -377,7 +377,6 @@ chief gate show 1
 chief gate answer 1 '{"mode":"one-by-one","selected":[0,2]}'
 chief runs show 1                              # steps, tokens, cost, side effects
 chief runs replay 1                            # everything that was sent and received, in order
-chief revert 1                                 # undo what the run changed, where possible
 ```
 
 | Command | Purpose |
@@ -396,7 +395,6 @@ chief revert 1                                 # undo what the run changed, wher
 | `chief models [--adapter a]` | The models the agent CLI offers |
 | `chief pause` / `resume` / `cancel <id>` | Control a run. Resuming a failed run tries its failed steps again |
 | `chief gate list` / `show` / `answer` / `approve` / `reject` | Answer gates |
-| `chief revert <run> [--to <node>]` | Undo a run's side effects in reverse order |
 | `chief schedule add` / `list` / `rm` / `enable` / `disable` | Cron schedules, without the app (the **Schedules** page does the same; they fire while `chief serve` runs) |
 | `chief settings get` / `set` | Settings such as `default-budget`, `claude-code.path`, `notify` |
 | `chief serve [--port n] [--no-open]` | HTTP API, web UI and scheduler on 127.0.0.1 (port 8080 by default); opens the web UI in the browser unless `--no-open` |

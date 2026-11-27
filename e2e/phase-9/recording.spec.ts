@@ -167,27 +167,6 @@ test("E9.2-4 failures are recorded: CLI crash with stderr, the retry, and the fi
   expect(of(msgs, "run_failed")[0].content).toContain("simulated crash");
 });
 
-test("E9.2-5 a revert is recorded too: compensation prompt and reply", ({ chief }) => {
-  chief.importWorkflow(`
-name: undo
-nodes:
-  - id: a
-    type: agent
-    prompt: 'A ${fake({ output: { side_effects: [{ kind: "doc", ref: "d1" }] } })}'
-    compensate: { prompt: 'UNDO {{output.side_effects}} ${fake({ output: { reverted: ["d1"], failed: [] } })}' }
-`);
-  chief.run(["run", "undo"]);
-  const before = replay(chief).length;
-  chief.run(["revert", "1"]);
-  const after = replay(chief).slice(before);
-  expect(kinds(after)).toEqual(["system:revert_started", "system:node_running", "in:command", "in:prompt", "out:agent_text", "out:result", "system:node_completed", "system:revert_report"]);
-  expect(of(after, "prompt")[0].content).toContain('UNDO [');
-  expect(of(after, "prompt")[0].content).toContain('"ref": "d1"');
-  expect(of(after, "node_running")[0].meta.phase).toBe("compensate");
-  expect(of(after, "revert_report")[0].meta).toMatchObject({ compensated: ["a"], reverted_effects: 1 });
-  expect(of(replay(chief), "side_effect")[0].meta).toMatchObject({ kind: "doc", ref: "d1" });
-});
-
 test("E9.2-6 runs are listed per workflow and a replay can be filtered and read as text", ({ chief }) => {
   chief.importWorkflow(`name: one\nnodes:\n  - { id: a, type: agent, prompt: 'first ${fake({ text: "y".repeat(5000) + '\\n```json\\n{"ok": true}\\n```' })}' }\n  - { id: b, type: agent, prompt: 'second' }\nedges: [a -> b]\n`);
   chief.importWorkflow("name: two\nnodes:\n  - { id: z, type: agent, prompt: other }\n");

@@ -63,11 +63,11 @@ edges: [plan -> slow, slow -> check, check -> each]
   await expect(edge(page, "check", "each")).not.toHaveClass(/animated/);
 });
 
-test("E9.49-2 a failed step is red on the diagram, turns green after a resume, and a compensated step is marked reverted", async ({ chief, boot, page }) => {
+test("E9.49-2 a failed step is red on the diagram and turns green after a resume", async ({ chief, boot, page }) => {
   chief.importWorkflow(`
 name: fallible
 nodes:
-  - { id: a, type: agent, mcp: [], prompt: 'A ${fake({ output: { ok: 1 } })}', compensate: { prompt: 'undo A ${fake({ output: { undone: true } })}' } }
+  - { id: a, type: agent, mcp: [], prompt: 'A ${fake({ output: { ok: 1 } })}' }
   - { id: b, type: agent, mcp: [], prompt: 'B ${fake({ by_start: [{ error: "context window exceeded" }, { error: "context window exceeded" }, { sleep_ms: 4000, output: { ok: 2 } }] })}' }
   - { id: c, type: agent, mcp: [], prompt: 'C ${fake({ output: { ok: 3 } })}' }
 edges: [a -> b, b -> c]
@@ -91,12 +91,7 @@ edges: [a -> b, b -> c]
   await expect(tid(page, "diagram-status-b")).toContainText("try 2");
   await expect(tid(page, "run-status")).toHaveText("completed", { timeout: 20_000 });
   for (const id of ["a", "b", "c"]) await expect(tid(page, `diagram-node-${id}`)).toHaveAttribute("data-status", "completed");
-
-  // Revert: the step with a compensation is marked reverted.
-  await tid(page, "btn-revert").click();
-  await expect(tid(page, "run-status")).toHaveText("reverted");
-  await expect(tid(page, "diagram-node-a")).toHaveAttribute("data-status", "reverted");
-  await expect(tid(page, "diagram-status-a")).toContainText("reverted");
+  await expect(tid(page, "btn-revert")).toHaveCount(0);
 });
 
 test("E9.57-1 the run diagram keeps the wheel for the page, and a step still opens on click", async ({ chief, boot, page }) => {
